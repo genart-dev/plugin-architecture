@@ -282,22 +282,16 @@ export const buildingLayerType: LayerTypeDefinition = {
 
     ctx.save();
 
-    // --- Ground plane + horizon ---
+    // --- Ground plane below horizon (drawn behind existing content) ---
     const horizY = horizonScreenY(camera, viewport);
     if (horizY < bounds.height) {
-      // Ground fill below horizon — subtle warm grey
+      // Use destination-over so ground goes behind buildings from earlier layers
+      // but above the base algorithm background. Full opacity = idempotent across layers.
+      const prevComposite = ctx.globalCompositeOperation;
+      ctx.globalCompositeOperation = "destination-over";
       ctx.fillStyle = "#d0cbc4";
       ctx.fillRect(0, horizY, bounds.width, bounds.height - horizY);
-
-      // Horizon line — thin, subtle
-      ctx.strokeStyle = palette.stroke;
-      ctx.globalAlpha = 0.25;
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      ctx.moveTo(0, horizY);
-      ctx.lineTo(bounds.width, horizY);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = prevComposite;
     }
 
     // --- Building elements ---

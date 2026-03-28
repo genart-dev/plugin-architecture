@@ -132,7 +132,13 @@ export function makeBox(
   return [front, back, left, right, top, bottom];
 }
 
-/** Draw a projected quad as a filled and stroked polygon. */
+/** Check if two screen points are effectively the same (degenerate edge). */
+function samePoint(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+  return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+}
+
+/** Draw a projected quad as a filled and stroked polygon.
+ *  Handles degenerate quads (triangles) where two corners collapse to one point. */
 export function drawQuad(
   ctx: CanvasRenderingContext2D,
   quad: ScreenQuad,
@@ -140,11 +146,20 @@ export function drawQuad(
 ): void {
   if (!quad.visible) return;
 
+  // Collect unique corners — degenerate quads (two corners same) become triangles
+  const c = quad.corners;
+  const pts: { x: number; y: number }[] = [c[0]];
+  if (!samePoint(c[1], c[0])) pts.push(c[1]);
+  if (!samePoint(c[2], pts[pts.length - 1]!)) pts.push(c[2]);
+  if (!samePoint(c[3], pts[pts.length - 1]!) && !samePoint(c[3], pts[0]!)) pts.push(c[3]);
+
+  if (pts.length < 3) return; // degenerate line or point — skip
+
   ctx.beginPath();
-  ctx.moveTo(quad.corners[0].x, quad.corners[0].y);
-  ctx.lineTo(quad.corners[1].x, quad.corners[1].y);
-  ctx.lineTo(quad.corners[2].x, quad.corners[2].y);
-  ctx.lineTo(quad.corners[3].x, quad.corners[3].y);
+  ctx.moveTo(pts[0]!.x, pts[0]!.y);
+  for (let i = 1; i < pts.length; i++) {
+    ctx.lineTo(pts[i]!.x, pts[i]!.y);
+  }
   ctx.closePath();
 
   if (!style.wireframe) {
