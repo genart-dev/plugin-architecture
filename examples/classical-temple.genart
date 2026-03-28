@@ -9,7 +9,7 @@
   "parameters": [],
   "colors": [],
   "state": { "seed": 42, "params": {}, "colorPalette": [] },
-  "algorithm": "function sketch(ctx, state) { ctx.fillStyle = '#ddd8d0'; ctx.fillRect(0, 0, state.canvas.width, state.canvas.height); }",
+  "algorithm": "function sketch(ctx, state) { var w=state.canvas.width, h=state.canvas.height, split=h*0.55; ctx.fillStyle='#ddd8d0'; ctx.fillRect(0,0,w,split); ctx.fillStyle='#d0cbc4'; ctx.fillRect(0,split,w,h-split); }",
   "layers": [
     {
       "id": "camera-01",
@@ -52,7 +52,7 @@
         "footprintRatio": 2.0,
         "roofForm": "roof-gable",
         "massingVariation": 0,
-        "constructionState": 0.5,
+        "constructionState": 0.8,
         "weathering": 0,
         "positionX": 0,
         "positionZ": 30,

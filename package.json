@@ -1,6 +1,6 @@
 {
   "name": "@genart-dev/plugin-architecture",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Generative architecture plugin for genart.dev — 40+ construction elements, 20+ style grammars, perspective-projected buildings, city-scale composition",
   "type": "module",
   "main": "./dist/index.cjs",

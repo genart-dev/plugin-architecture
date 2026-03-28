@@ -7,7 +7,7 @@ import type {
   ValidationError,
 } from "@genart-dev/core";
 import type { Camera, Viewport } from "@genart-dev/projection";
-import { createCamera, horizonScreenY } from "@genart-dev/projection";
+import { createCamera } from "@genart-dev/projection";
 import type { ArchitecturalStyleName, BuildingConfig } from "../types.js";
 import { compositeBuilding, defaultBuildingConfig } from "../compositor.js";
 import { renderBuilding, makeViewport } from "../projection/index.js";
@@ -281,20 +281,6 @@ export const buildingLayerType: LayerTypeDefinition = {
     const items = renderBuilding(building, camera, viewport, palette, p.wireframe);
 
     ctx.save();
-
-    // --- Ground plane below horizon (drawn behind existing content) ---
-    const horizY = horizonScreenY(camera, viewport);
-    if (horizY < bounds.height) {
-      // Use destination-over so ground goes behind buildings from earlier layers
-      // but above the base algorithm background. Full opacity = idempotent across layers.
-      const prevComposite = ctx.globalCompositeOperation;
-      ctx.globalCompositeOperation = "destination-over";
-      ctx.fillStyle = "#d0cbc4";
-      ctx.fillRect(0, horizY, bounds.width, bounds.height - horizY);
-      ctx.globalCompositeOperation = prevComposite;
-    }
-
-    // --- Building elements ---
     for (const item of items) {
       item.draw(ctx);
     }
