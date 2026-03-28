@@ -7,4 +7,4 @@ export {
   depthAdjustedStyle,
   renderBuilding,
 } from "./bridge.js";
-export type { RenderItem } from "./bridge.js";
+export type { RenderItem, ElementHint } from "./bridge.js";

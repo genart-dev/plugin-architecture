@@ -7,7 +7,7 @@ import type {
   ValidationError,
 } from "@genart-dev/core";
 import type { Camera, Viewport } from "@genart-dev/projection";
-import { createCamera } from "@genart-dev/projection";
+import { createCamera, horizonScreenY } from "@genart-dev/projection";
 import type { ArchitecturalStyleName, BuildingConfig } from "../types.js";
 import { compositeBuilding, defaultBuildingConfig } from "../compositor.js";
 import { renderBuilding, makeViewport } from "../projection/index.js";
@@ -281,6 +281,26 @@ export const buildingLayerType: LayerTypeDefinition = {
     const items = renderBuilding(building, camera, viewport, palette, p.wireframe);
 
     ctx.save();
+
+    // --- Ground plane + horizon ---
+    const horizY = horizonScreenY(camera, viewport);
+    if (horizY < bounds.height) {
+      // Ground fill below horizon — subtle warm grey
+      ctx.fillStyle = "#d0cbc4";
+      ctx.fillRect(0, horizY, bounds.width, bounds.height - horizY);
+
+      // Horizon line — thin, subtle
+      ctx.strokeStyle = palette.stroke;
+      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0, horizY);
+      ctx.lineTo(bounds.width, horizY);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // --- Building elements ---
     for (const item of items) {
       item.draw(ctx);
     }

@@ -18,7 +18,7 @@ import type {
   StylePalette,
 } from "../types.js";
 import { getElementRenderer } from "../elements/index.js";
-import { darken } from "../shared/color-utils.js";
+import { darken, lighten, lerpColor } from "../shared/color-utils.js";
 import { mulberry32 } from "../shared/prng.js";
 
 // ---------------------------------------------------------------------------
@@ -161,9 +161,15 @@ export function isBuildingVisible(
 // Depth-aware render style
 // ---------------------------------------------------------------------------
 
+/** Hint about what kind of element is being rendered — affects fill color. */
+export type ElementHint = "wall" | "roof" | "opening" | "structure" | "decorative";
+
 /**
  * Compute a render style adjusted for distance from the camera.
  * Farther objects get thinner strokes, lower opacity, lower detail.
+ *
+ * `faceDot` is the dot product of the face normal with the light direction
+ * (range -1 to 1). Positive = lit, negative = shadow. Used for directional shading.
  */
 export function depthAdjustedStyle(
   palette: StylePalette,
@@ -171,16 +177,53 @@ export function depthAdjustedStyle(
   scale: number,
   detail: number,
   wireframe: boolean,
+  hint: ElementHint = "wall",
+  faceDot: number = 0,
 ): RenderStyle {
   // Atmospheric fade: objects further away become lighter / less saturated
   const atmosphereFade = Math.max(0, Math.min(1, depth * 0.8));
-  const atmosphereColor = "#d8d4d0";
+
+  // Base fill color depends on element type
+  let baseFill: string;
+  switch (hint) {
+    case "roof":
+      baseFill = palette.roof;
+      break;
+    case "opening":
+      baseFill = palette.opening;
+      break;
+    case "structure":
+      baseFill = palette.structure;
+      break;
+    case "decorative":
+      baseFill = palette.trim;
+      break;
+    default:
+      baseFill = palette.wall;
+  }
+
+  // Directional shading: darken shadow-facing sides, lighten lit sides
+  const shadingAmount = faceDot * 0.2; // subtle: ±20% darken/lighten
+  const shadedFill = shadingAmount < 0
+    ? darken(baseFill, -shadingAmount)
+    : lighten(baseFill, shadingAmount);
+
+  // Atmospheric blend toward background for distant objects
+  const finalFill = atmosphereFade > 0.1
+    ? lerpColor(shadedFill, "#d8d4d0", atmosphereFade * 0.4)
+    : shadedFill;
+
+  // Stroke: atmospheric fade lightens the stroke for distant objects
+  const finalStroke = atmosphereFade > 0.3
+    ? lerpColor(palette.stroke, "#a0988c", atmosphereFade * 0.5)
+    : palette.stroke;
 
   return {
-    strokeColor: atmosphereFade > 0.5 ? darken(palette.stroke, atmosphereFade * 0.3) : palette.stroke,
-    fillColor: palette.wall,
-    strokeWeight: Math.max(0.3, (1 - atmosphereFade * 0.5) * Math.min(2, scale * 0.02)),
-    opacity: Math.max(0.2, 1 - atmosphereFade * 0.6),
+    strokeColor: finalStroke,
+    fillColor: finalFill,
+    // 3x multiplier vs old formula — visible strokes at all scales
+    strokeWeight: Math.max(0.8, (1 - atmosphereFade * 0.4) * Math.min(4, scale * 0.06)),
+    opacity: Math.max(0.3, 1 - atmosphereFade * 0.5),
     detail: detail * (1 - atmosphereFade * 0.5),
     wireframe,
   };
@@ -194,6 +237,26 @@ export function depthAdjustedStyle(
 export interface RenderItem {
   depth: number;
   draw: (ctx: CanvasRenderingContext2D) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Light direction (fixed sun from upper-left-front)
+// ---------------------------------------------------------------------------
+
+/** Normalized light direction vector — upper-left, slightly forward. */
+const LIGHT_DIR: Vec3 = (() => {
+  const lx = -0.5, ly = 0.7, lz = 0.5;
+  const len = Math.sqrt(lx * lx + ly * ly + lz * lz);
+  return { x: lx / len, y: ly / len, z: lz / len };
+})();
+
+/** Classify an element type into a rendering hint. */
+function classifyElement(type: string): ElementHint {
+  if (type.startsWith("roof-")) return "roof";
+  if (type.startsWith("window-") || type.startsWith("door-")) return "opening";
+  if (type.startsWith("column-") || type.startsWith("pilaster") || type.startsWith("beam-") || type.startsWith("buttress-")) return "structure";
+  if (["cornice", "frieze", "string-course", "quoins", "rustication", "tracery", "timber-framing", "zellige", "mashrabiya"].includes(type)) return "decorative";
+  return "wall";
 }
 
 /**
@@ -222,7 +285,22 @@ export function renderBuilding(
     const avgDepth = visibleQuads.reduce((s, q) => s + q.depth, 0) / visibleQuads.length;
     const avgScale = visibleQuads.reduce((s, q) => s + q.scale, 0) / visibleQuads.length;
 
-    const style = depthAdjustedStyle(palette, avgDepth, avgScale, element.detail, wireframe);
+    // Compute average face dot product with light direction for shading
+    const hint = classifyElement(element.type);
+    let avgDot = 0;
+    if (result.quads.length > 0) {
+      let dotSum = 0;
+      for (const quad of result.quads) {
+        const n = quad.normal;
+        const len = Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+        if (len > 0) {
+          dotSum += (n.x * LIGHT_DIR.x + n.y * LIGHT_DIR.y + n.z * LIGHT_DIR.z) / len;
+        }
+      }
+      avgDot = dotSum / result.quads.length;
+    }
+
+    const style = depthAdjustedStyle(palette, avgDepth, avgScale, element.detail, wireframe, hint, avgDot);
 
     items.push({
       depth: avgDepth,

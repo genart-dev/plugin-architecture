@@ -103,21 +103,36 @@ function drawWindow(
 ): void {
   if (projected.length === 0) return;
 
-  // First quad = frame (use fill color), second = glass (use opening/dark color)
+  // First quad = frame surround, second = glass pane, rest = mullions/transoms
   for (let i = 0; i < projected.length; i++) {
     const sq = projected[i]!;
     if (!sq.visible) continue;
 
-    if (i === 1) {
-      // Glass pane — dark fill
+    if (i === 0) {
+      // Frame surround — slightly lighter than wall, thicker stroke
+      const frameStyle: RenderStyle = {
+        ...style,
+        strokeWeight: style.strokeWeight * 1.2,
+        opacity: Math.min(1, style.opacity * 1.1),
+      };
+      drawQuad(ctx, sq, frameStyle);
+    } else if (i === 1) {
+      // Glass pane — very dark fill, full opacity for contrast
       const glassStyle: RenderStyle = {
         ...style,
-        fillColor: "#1a1a2e",
-        strokeWeight: style.strokeWeight * 0.6,
+        fillColor: "#0e0e1a",
+        strokeWeight: style.strokeWeight * 0.8,
+        opacity: Math.min(1, style.opacity + 0.2),
       };
       drawQuad(ctx, sq, glassStyle);
     } else {
-      drawQuad(ctx, sq, style);
+      // Mullion bars — thicker for visibility
+      const mullionStyle: RenderStyle = {
+        ...style,
+        strokeWeight: style.strokeWeight * 0.7,
+        opacity: Math.min(1, style.opacity + 0.1),
+      };
+      drawQuad(ctx, sq, mullionStyle);
     }
   }
 }
