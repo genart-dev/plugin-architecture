@@ -1,0 +1,65 @@
+{
+  "genart": "1.1",
+  "id": "classical-temple",
+  "title": "Classical Temple",
+  "created": "2026-03-28T00:00:00Z",
+  "modified": "2026-03-28T00:00:00Z",
+  "renderer": { "type": "canvas2d" },
+  "canvas": { "width": 1200, "height": 800 },
+  "parameters": [],
+  "colors": [],
+  "state": { "seed": 42, "params": {}, "colorPalette": [] },
+  "algorithm": "function sketch(ctx, state) { ctx.fillStyle = '#ddd8d0'; ctx.fillRect(0, 0, state.canvas.width, state.canvas.height); }",
+  "layers": [
+    {
+      "id": "camera-01",
+      "type": "perspective:camera",
+      "name": "Camera",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": { "x": 0, "y": 0, "width": 1200, "height": 800, "rotation": 0, "scaleX": 1, "scaleY": 1, "anchorX": 0, "anchorY": 0 },
+      "properties": {
+        "preset": "street",
+        "positionX": 0,
+        "positionY": 1.7,
+        "positionZ": 0,
+        "targetX": 0,
+        "targetY": 3,
+        "targetZ": 30,
+        "fov": 55,
+        "projectionType": "perspective",
+        "near": 0.1,
+        "far": 10000,
+        "orthoScale": 100
+      }
+    },
+    {
+      "id": "building-01",
+      "type": "architecture:building",
+      "name": "Classical Temple",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": { "x": 0, "y": 0, "width": 1200, "height": 800, "rotation": 0, "scaleX": 1, "scaleY": 1, "anchorX": 0, "anchorY": 0 },
+      "properties": {
+        "architecturalStyle": "classical",
+        "buildingScale": "civic",
+        "stories": 1,
+        "bays": 6,
+        "footprintRatio": 2.0,
+        "roofForm": "roof-gable",
+        "massingVariation": 0,
+        "constructionState": 0.5,
+        "weathering": 0,
+        "positionX": 0,
+        "positionZ": 30,
+        "rotationDeg": 15,
+        "wireframe": false,
+        "seed": 100
+      }
+    }
+  ]
+}

@@ -9,6 +9,11 @@ export default defineConfig({
   splitting: false,
   external: [
     "@genart-dev/core",
+  ],
+  // projection + plugin-perspective are intentionally bundled in
+  // so the generated compositor renderer works inside the iframe
+  // (which stubs require() for external deps).
+  noExternal: [
     "@genart-dev/projection",
     "@genart-dev/plugin-perspective",
   ],
