@@ -402,34 +402,57 @@ registerElement("roof-barrel-vault", (el) => {
 });
 
 registerElement("roof-spire", (el) => {
-  const { position, width, height, rotation } = el;
+  const { position, width, height, depth, rotation } = el;
   const hw = width / 2;
+  const hd = depth / 2;
   const cosR = Math.cos(rotation);
   const sinR = Math.sin(rotation);
   const r = (lx: number, ly: number, lz: number) =>
     rotPoint(position.x, position.y, position.z, lx, ly, lz, cosR, sinR);
 
-  const quads: WorldQuad[] = [];
-  const sides = 4;
-
-  for (let i = 0; i < sides; i++) {
-    const a0 = (i / sides) * Math.PI * 2;
-    const a1 = ((i + 1) / sides) * Math.PI * 2;
-
-    quads.push({
+  // Rectangular base matching building footprint, 4 triangular faces to apex
+  const quads: WorldQuad[] = [
+    // Front face
+    {
       corners: [
-        r(Math.cos(a0) * hw, 0, Math.sin(a0) * hw),
-        r(Math.cos(a1) * hw, 0, Math.sin(a1) * hw),
+        r(-hw, 0, hd),
+        r(hw, 0, hd),
         r(0, height, 0),
         r(0, height, 0),
       ],
-      normal: {
-        x: Math.cos((a0 + a1) / 2),
-        y: 0.5,
-        z: Math.sin((a0 + a1) / 2),
-      },
-    });
-  }
+      normal: { x: 0, y: hd, z: height },
+    },
+    // Back face
+    {
+      corners: [
+        r(hw, 0, -hd),
+        r(-hw, 0, -hd),
+        r(0, height, 0),
+        r(0, height, 0),
+      ],
+      normal: { x: 0, y: hd, z: -height },
+    },
+    // Left face
+    {
+      corners: [
+        r(-hw, 0, -hd),
+        r(-hw, 0, hd),
+        r(0, height, 0),
+        r(0, height, 0),
+      ],
+      normal: { x: -height, y: hw, z: 0 },
+    },
+    // Right face
+    {
+      corners: [
+        r(hw, 0, hd),
+        r(hw, 0, -hd),
+        r(0, height, 0),
+        r(0, height, 0),
+      ],
+      normal: { x: height, y: hw, z: 0 },
+    },
+  ];
 
   return { quads, draw: drawRoof };
 });
