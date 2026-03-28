@@ -113,8 +113,8 @@ registerElement("roof-hip", (el) => {
       corners: [
         r(-hw, 0, hd),
         r(hw, 0, hd),
-        r(hw * 0.3, height, ridgeLen),
-        r(-hw * 0.3, height, ridgeLen),
+        r(0, height, ridgeLen),
+        r(0, height, ridgeLen), // degenerate triangle when ridgeLen=0
       ],
       normal: { x: 0, y: hd, z: height },
     },
@@ -123,8 +123,8 @@ registerElement("roof-hip", (el) => {
       corners: [
         r(hw, 0, -hd),
         r(-hw, 0, -hd),
-        r(-hw * 0.3, height, -ridgeLen),
-        r(hw * 0.3, height, -ridgeLen),
+        r(0, height, -ridgeLen),
+        r(0, height, -ridgeLen),
       ],
       normal: { x: 0, y: hd, z: -height },
     },
@@ -133,8 +133,8 @@ registerElement("roof-hip", (el) => {
       corners: [
         r(-hw, 0, -hd),
         r(-hw, 0, hd),
-        r(-hw * 0.3, height, ridgeLen),
-        r(-hw * 0.3, height, -ridgeLen),
+        r(0, height, ridgeLen),
+        r(0, height, -ridgeLen),
       ],
       normal: { x: -height, y: hw, z: 0 },
     },
@@ -143,8 +143,8 @@ registerElement("roof-hip", (el) => {
       corners: [
         r(hw, 0, hd),
         r(hw, 0, -hd),
-        r(hw * 0.3, height, -ridgeLen),
-        r(hw * 0.3, height, ridgeLen),
+        r(0, height, -ridgeLen),
+        r(0, height, ridgeLen),
       ],
       normal: { x: height, y: hw, z: 0 },
     },
@@ -168,6 +168,10 @@ registerElement("roof-mansard", (el) => {
   const r = (lx: number, ly: number, lz: number) =>
     rotPoint(position.x, position.y, position.z, lx, ly, lz, cosR, sinR);
 
+  // Upper section meets at a flat rectangle, not a point
+  const topInset = upperInset * 1.8;
+  const topH = height;
+
   const quads: WorldQuad[] = [
     // Lower front (steep)
     {
@@ -178,16 +182,6 @@ registerElement("roof-mansard", (el) => {
         r(-hw + upperInset, breakH, hd - upperInset),
       ],
       normal: { x: 0, y: 0.3, z: 1 },
-    },
-    // Upper front (shallow)
-    {
-      corners: [
-        r(-hw + upperInset, breakH, hd - upperInset),
-        r(hw - upperInset, breakH, hd - upperInset),
-        r(0, height, 0),
-        r(0, height, 0),
-      ],
-      normal: { x: 0, y: 1, z: 0.3 },
     },
     // Lower left (steep)
     {
@@ -218,6 +212,56 @@ registerElement("roof-mansard", (el) => {
         r(hw - upperInset, breakH, -hd + upperInset),
       ],
       normal: { x: 0, y: 0.3, z: -1 },
+    },
+    // Upper front (shallow slope to flat top)
+    {
+      corners: [
+        r(-hw + upperInset, breakH, hd - upperInset),
+        r(hw - upperInset, breakH, hd - upperInset),
+        r(hw - topInset, topH, hd - topInset),
+        r(-hw + topInset, topH, hd - topInset),
+      ],
+      normal: { x: 0, y: 1, z: 0.3 },
+    },
+    // Upper back (shallow)
+    {
+      corners: [
+        r(hw - upperInset, breakH, -hd + upperInset),
+        r(-hw + upperInset, breakH, -hd + upperInset),
+        r(-hw + topInset, topH, -hd + topInset),
+        r(hw - topInset, topH, -hd + topInset),
+      ],
+      normal: { x: 0, y: 1, z: -0.3 },
+    },
+    // Upper left (shallow)
+    {
+      corners: [
+        r(-hw + upperInset, breakH, -hd + upperInset),
+        r(-hw + upperInset, breakH, hd - upperInset),
+        r(-hw + topInset, topH, hd - topInset),
+        r(-hw + topInset, topH, -hd + topInset),
+      ],
+      normal: { x: -0.3, y: 1, z: 0 },
+    },
+    // Upper right (shallow)
+    {
+      corners: [
+        r(hw - upperInset, breakH, hd - upperInset),
+        r(hw - upperInset, breakH, -hd + upperInset),
+        r(hw - topInset, topH, -hd + topInset),
+        r(hw - topInset, topH, hd - topInset),
+      ],
+      normal: { x: 0.3, y: 1, z: 0 },
+    },
+    // Flat top
+    {
+      corners: [
+        r(-hw + topInset, topH, hd - topInset),
+        r(hw - topInset, topH, hd - topInset),
+        r(hw - topInset, topH, -hd + topInset),
+        r(-hw + topInset, topH, -hd + topInset),
+      ],
+      normal: { x: 0, y: 1, z: 0 },
     },
   ];
 

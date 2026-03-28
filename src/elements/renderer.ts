@@ -174,7 +174,8 @@ export function drawQuad(
   ctx.stroke();
 }
 
-/** Draw a projected quad with hatching (detail-dependent line count). */
+/** Draw a projected quad with hatching (detail-dependent line count).
+ *  Handles degenerate quads (triangles) by clipping hatch to the shape. */
 export function drawQuadWithHatching(
   ctx: CanvasRenderingContext2D,
   quad: ScreenQuad,
@@ -192,21 +193,44 @@ export function drawQuadWithHatching(
   ctx.strokeStyle = style.strokeColor;
   ctx.lineWidth = Math.max(0.5, style.strokeWeight * 0.4);
 
-  const cos = Math.cos(hatchAngle);
-  const sin = Math.sin(hatchAngle);
+  // Detect degenerate quad (triangle): if corners 2 and 3 are the same
+  const c = quad.corners;
+  const isTriangle = samePoint(c[2], c[3]);
 
-  for (let i = 1; i < lines; i++) {
-    const t = i / lines;
-    // Interpolate along left and right edges
-    const lx = quad.corners[0].x + (quad.corners[3].x - quad.corners[0].x) * t;
-    const ly = quad.corners[0].y + (quad.corners[3].y - quad.corners[0].y) * t;
-    const rx = quad.corners[1].x + (quad.corners[2].x - quad.corners[1].x) * t;
-    const ry = quad.corners[1].y + (quad.corners[2].y - quad.corners[1].y) * t;
+  if (isTriangle) {
+    // Triangle hatching: interpolate from base (c0→c1) toward apex (c2)
+    for (let i = 1; i < lines; i++) {
+      const t = i / lines;
+      // Left edge: c0 → c2 (apex)
+      const lx = c[0].x + (c[2].x - c[0].x) * t;
+      const ly = c[0].y + (c[2].y - c[0].y) * t;
+      // Right edge: c1 → c2 (apex)
+      const rx = c[1].x + (c[2].x - c[1].x) * t;
+      const ry = c[1].y + (c[2].y - c[1].y) * t;
 
-    ctx.beginPath();
-    ctx.moveTo(lx + cos * 0.5, ly + sin * 0.5);
-    ctx.lineTo(rx - cos * 0.5, ry - sin * 0.5);
-    ctx.stroke();
+      // Skip near-zero-length lines at apex
+      const dx = rx - lx, dy = ry - ly;
+      if (dx * dx + dy * dy < 4) continue;
+
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(rx, ry);
+      ctx.stroke();
+    }
+  } else {
+    // Quad hatching: interpolate along left (c0→c3) and right (c1→c2) edges
+    for (let i = 1; i < lines; i++) {
+      const t = i / lines;
+      const lx = c[0].x + (c[3].x - c[0].x) * t;
+      const ly = c[0].y + (c[3].y - c[0].y) * t;
+      const rx = c[1].x + (c[2].x - c[1].x) * t;
+      const ry = c[1].y + (c[2].y - c[1].y) * t;
+
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(rx, ry);
+      ctx.stroke();
+    }
   }
 }
 

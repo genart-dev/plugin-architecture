@@ -50,6 +50,32 @@ export function makeViewport(width: number, height: number): Viewport {
  * Project a WorldQuad to ScreenQuad using a camera and viewport.
  * Handles back-face culling.
  */
+/** Compute centroid of a quad's unique corners (handles degenerate quads). */
+function quadCentroid(corners: readonly [Vec3, Vec3, Vec3, Vec3]): Vec3 {
+  const eps = 0.001;
+  const same = (a: Vec3, b: Vec3) =>
+    Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps && Math.abs(a.z - b.z) <= eps;
+
+  // Deduplicate adjacent corners
+  const all: Vec3[] = [corners[0], corners[1], corners[2], corners[3]];
+  const unique: Vec3[] = [all[0]!];
+  for (let i = 1; i < 4; i++) {
+    if (!same(all[i]!, unique[unique.length - 1]!)) {
+      unique.push(all[i]!);
+    }
+  }
+  if (unique.length > 1 && same(unique[unique.length - 1]!, unique[0]!)) {
+    unique.pop();
+  }
+
+  const n = unique.length || 1;
+  return {
+    x: unique.reduce((s, p) => s + p.x, 0) / n,
+    y: unique.reduce((s, p) => s + p.y, 0) / n,
+    z: unique.reduce((s, p) => s + p.z, 0) / n,
+  };
+}
+
 export function projectQuad(
   quad: WorldQuad,
   camera: Camera,
@@ -57,12 +83,8 @@ export function projectQuad(
 ): ScreenQuad {
   const vpMatrix = viewProjectionMatrix(camera, viewport);
 
-  // Back-face culling
-  const center: Vec3 = {
-    x: (quad.corners[0].x + quad.corners[1].x + quad.corners[2].x + quad.corners[3].x) / 4,
-    y: (quad.corners[0].y + quad.corners[1].y + quad.corners[2].y + quad.corners[3].y) / 4,
-    z: (quad.corners[0].z + quad.corners[1].z + quad.corners[2].z + quad.corners[3].z) / 4,
-  };
+  // Back-face culling — use centroid of unique corners for degenerate quads
+  const center = quadCentroid(quad.corners);
 
   if (isBackFace(quad.normal, center, camera)) {
     return {
@@ -101,11 +123,7 @@ export function projectQuads(
   const vpMatrix = viewProjectionMatrix(camera, viewport);
 
   return quads.map((quad) => {
-    const center: Vec3 = {
-      x: (quad.corners[0].x + quad.corners[1].x + quad.corners[2].x + quad.corners[3].x) / 4,
-      y: (quad.corners[0].y + quad.corners[1].y + quad.corners[2].y + quad.corners[3].y) / 4,
-      z: (quad.corners[0].z + quad.corners[1].z + quad.corners[2].z + quad.corners[3].z) / 4,
-    };
+    const center = quadCentroid(quad.corners);
 
     if (isBackFace(quad.normal, center, camera)) {
       return {
@@ -259,9 +277,19 @@ function classifyElement(type: string): ElementHint {
   return "wall";
 }
 
+/** Compute the normalized dot product of a normal with the light direction. */
+function faceLightDot(normal: Vec3): number {
+  const len = Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+  if (len === 0) return 0;
+  return (normal.x * LIGHT_DIR.x + normal.y * LIGHT_DIR.y + normal.z * LIGHT_DIR.z) / len;
+}
+
 /**
  * Produce renderable items for a building — projects all elements
- * through the camera and returns depth-sorted draw commands.
+ * through the camera and returns **per-quad** depth-sorted draw commands.
+ *
+ * Each visible quad becomes its own RenderItem so depth sorting works
+ * correctly across element boundaries (e.g. roof faces interleave with walls).
  */
 export function renderBuilding(
   building: Building,
@@ -277,35 +305,49 @@ export function renderBuilding(
     const renderer = getElementRenderer(element.type);
     const result = renderer(element, rand);
     const projected = projectQuads(result.quads, camera, viewport);
-
-    // Average depth for sorting this element
-    const visibleQuads = projected.filter((q) => q.visible);
-    if (visibleQuads.length === 0) continue;
-
-    const avgDepth = visibleQuads.reduce((s, q) => s + q.depth, 0) / visibleQuads.length;
-    const avgScale = visibleQuads.reduce((s, q) => s + q.scale, 0) / visibleQuads.length;
-
-    // Compute average face dot product with light direction for shading
     const hint = classifyElement(element.type);
-    let avgDot = 0;
-    if (result.quads.length > 0) {
-      let dotSum = 0;
-      for (const quad of result.quads) {
-        const n = quad.normal;
-        const len = Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
-        if (len > 0) {
-          dotSum += (n.x * LIGHT_DIR.x + n.y * LIGHT_DIR.y + n.z * LIGHT_DIR.z) / len;
-        }
+
+    // Elements with custom per-quad-index draw logic (windows, doors,
+    // timber-frame walls, glass walls, glass curtain walls) use the element
+    // draw function with all quads grouped. All other elements emit
+    // individual per-quad RenderItems for correct depth interleaving.
+    const hasCustomDraw = hint === "opening"
+      || element.type === "wall-timber-frame"
+      || element.type === "wall-glass"
+      || element.type === "glass-curtain-wall";
+
+    if (hasCustomDraw) {
+      // Openings (windows/doors) need quad index for frame vs glass.
+      // Group them as a single item using average depth.
+      const visibleQuads = projected.filter((q) => q.visible);
+      if (visibleQuads.length === 0) continue;
+
+      const avgDepth = visibleQuads.reduce((s, q) => s + q.depth, 0) / visibleQuads.length;
+      const avgScale = visibleQuads.reduce((s, q) => s + q.scale, 0) / visibleQuads.length;
+      const avgDot = result.quads.reduce((s, q) => s + faceLightDot(q.normal), 0) / result.quads.length;
+      const style = depthAdjustedStyle(palette, avgDepth, avgScale, element.detail, wireframe, hint, avgDot);
+
+      items.push({
+        depth: avgDepth,
+        draw: (ctx) => result.draw(ctx, projected, style),
+      });
+    } else {
+      // Per-quad sorting: each visible quad is its own depth-sorted item.
+      for (let i = 0; i < projected.length; i++) {
+        const sq = projected[i]!;
+        if (!sq.visible) continue;
+
+        const dot = i < result.quads.length ? faceLightDot(result.quads[i]!.normal) : 0;
+        const style = depthAdjustedStyle(palette, sq.depth, sq.scale, element.detail, wireframe, hint, dot);
+
+        // Capture quad index and projected quad for the draw closure
+        const quadIdx = i;
+        items.push({
+          depth: sq.depth,
+          draw: (ctx) => result.draw(ctx, [sq], style),
+        });
       }
-      avgDot = dotSum / result.quads.length;
     }
-
-    const style = depthAdjustedStyle(palette, avgDepth, avgScale, element.detail, wireframe, hint, avgDot);
-
-    items.push({
-      depth: avgDepth,
-      draw: (ctx) => result.draw(ctx, projected, style),
-    });
   }
 
   // Sort back to front
