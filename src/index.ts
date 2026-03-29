@@ -2,12 +2,12 @@
  * @genart-dev/plugin-architecture — Generative architecture for genart.dev
  *
  * Ground-up generative architecture system with 40+ construction elements,
- * 6 style grammars (expanding to 20+), perspective-projected buildings,
- * and city-scale composition.
+ * 24 style grammars, perspective-projected buildings, and illustration
+ * rendering modes (pencil, ink, technical, engraving, woodcut).
  *
- * v0.1.0: Core vocabulary (columns, arches, windows, doors, roofs, walls,
- * decorative, modern), 24 styles (14 historical + 5 modern + 5 experimental),
- * building compositor, camera projection bridge, 5 MCP tools, 22 presets.
+ * v0.2.0: Illustration integration — replaces Canvas2D fill+stroke with
+ * @genart-dev/illustration mark and fill strategies for hand-drawn rendering.
+ * 6 render modes, 15 layer properties, 88 tests.
  */
 
 import type { DesignPlugin, PluginContext } from "@genart-dev/core";
@@ -64,6 +64,15 @@ export {
 } from "./projection/index.js";
 export type { RenderItem } from "./projection/index.js";
 
+// Illustration integration
+export {
+  drawQuadIllustrated,
+  drawQuadWithHatchingIllustrated,
+  drawMarks,
+  getStrategy,
+} from "./illustration/index.js";
+export type { IllustrationStrategy } from "./illustration/index.js";
+
 // Presets
 export { ALL_PRESETS, getPreset, filterPresets, searchPresets } from "./presets/index.js";
 export type { BuildingPreset } from "./presets/index.js";
@@ -73,6 +82,7 @@ export { architectureMcpTools } from "./architecture-tools.js";
 
 // Types
 export type {
+  RenderMode,
   ArchitecturalStyleName,
   HistoricalStyle,
   ModernStyle,

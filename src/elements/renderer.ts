@@ -7,6 +7,10 @@ import type {
   ScreenQuad,
   WorldQuad,
 } from "../types.js";
+import {
+  drawQuadIllustrated,
+  drawQuadWithHatchingIllustrated,
+} from "../illustration/index.js";
 
 // ---------------------------------------------------------------------------
 // Element Renderer Registry
@@ -137,14 +141,30 @@ function samePoint(a: { x: number; y: number }, b: { x: number; y: number }): bo
   return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
 }
 
+/** Simple hash-based rng seeded from quad corner positions. */
+function quadRng(quad: ScreenQuad): () => number {
+  let s = Math.abs(quad.corners[0].x * 1000 + quad.corners[0].y * 7 + quad.depth * 31) | 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) | 0;
+    return ((s >>> 0) / 4294967296);
+  };
+}
+
 /** Draw a projected quad as a filled and stroked polygon.
- *  Handles degenerate quads (triangles) where two corners collapse to one point. */
+ *  Handles degenerate quads (triangles) where two corners collapse to one point.
+ *  In illustration modes (pencil, ink, etc.), delegates to illustration strategies. */
 export function drawQuad(
   ctx: CanvasRenderingContext2D,
   quad: ScreenQuad,
   style: RenderStyle,
 ): void {
   if (!quad.visible) return;
+
+  // Dispatch to illustration for non-filled modes
+  if (style.renderMode && style.renderMode !== "filled") {
+    drawQuadIllustrated(ctx, quad, style, quadRng(quad));
+    return;
+  }
 
   // Collect unique corners — degenerate quads (two corners same) become triangles
   const c = quad.corners;
@@ -183,6 +203,12 @@ export function drawQuadWithHatching(
   hatchAngle: number,
   hatchDensity: number,
 ): void {
+  // Dispatch to illustration for non-filled modes
+  if (style.renderMode && style.renderMode !== "filled") {
+    drawQuadWithHatchingIllustrated(ctx, quad, style, quadRng(quad), hatchAngle, hatchDensity);
+    return;
+  }
+
   drawQuad(ctx, quad, style);
   if (style.wireframe || style.detail < 0.3) return;
 

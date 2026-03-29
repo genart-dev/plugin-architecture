@@ -15,6 +15,7 @@ import type {
   ElementRenderResult,
   Building,
   RenderStyle,
+  RenderMode,
   StylePalette,
 } from "../types.js";
 import { getElementRenderer } from "../elements/index.js";
@@ -197,6 +198,7 @@ export function depthAdjustedStyle(
   wireframe: boolean,
   hint: ElementHint = "wall",
   faceDot: number = 0,
+  renderMode: RenderMode = "filled",
 ): RenderStyle {
   // Atmospheric fade: objects further away become lighter / less saturated
   const atmosphereFade = Math.max(0, Math.min(1, depth * 0.8));
@@ -244,6 +246,7 @@ export function depthAdjustedStyle(
     opacity: Math.max(0.3, 1 - atmosphereFade * 0.5),
     detail: detail * (1 - atmosphereFade * 0.5),
     wireframe,
+    renderMode,
   };
 }
 
@@ -297,6 +300,7 @@ export function renderBuilding(
   viewport: Viewport,
   palette: StylePalette,
   wireframe: boolean,
+  renderMode: RenderMode = "filled",
 ): RenderItem[] {
   const rand = mulberry32(building.config.seed);
   const items: RenderItem[] = [];
@@ -325,7 +329,7 @@ export function renderBuilding(
       const avgDepth = visibleQuads.reduce((s, q) => s + q.depth, 0) / visibleQuads.length;
       const avgScale = visibleQuads.reduce((s, q) => s + q.scale, 0) / visibleQuads.length;
       const avgDot = result.quads.reduce((s, q) => s + faceLightDot(q.normal), 0) / result.quads.length;
-      const style = depthAdjustedStyle(palette, avgDepth, avgScale, element.detail, wireframe, hint, avgDot);
+      const style = depthAdjustedStyle(palette, avgDepth, avgScale, element.detail, wireframe, hint, avgDot, renderMode);
 
       items.push({
         depth: avgDepth,
@@ -338,10 +342,8 @@ export function renderBuilding(
         if (!sq.visible) continue;
 
         const dot = i < result.quads.length ? faceLightDot(result.quads[i]!.normal) : 0;
-        const style = depthAdjustedStyle(palette, sq.depth, sq.scale, element.detail, wireframe, hint, dot);
+        const style = depthAdjustedStyle(palette, sq.depth, sq.scale, element.detail, wireframe, hint, dot, renderMode);
 
-        // Capture quad index and projected quad for the draw closure
-        const quadIdx = i;
         items.push({
           depth: sq.depth,
           draw: (ctx) => result.draw(ctx, [sq], style),

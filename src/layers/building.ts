@@ -8,7 +8,7 @@ import type {
 } from "@genart-dev/core";
 import type { Camera, Viewport } from "@genart-dev/projection";
 import { createCamera } from "@genart-dev/projection";
-import type { ArchitecturalStyleName, BuildingConfig } from "../types.js";
+import type { ArchitecturalStyleName, BuildingConfig, RenderMode } from "../types.js";
 import { compositeBuilding, defaultBuildingConfig } from "../compositor.js";
 import { renderBuilding, makeViewport } from "../projection/index.js";
 import { requireStyle, listStyles } from "../styles/index.js";
@@ -158,6 +158,21 @@ const BUILDING_PROPERTIES: LayerPropertySchema[] = [
     group: "placement",
   },
   {
+    key: "renderMode",
+    label: "Render Mode",
+    type: "select",
+    default: "pencil",
+    options: [
+      { value: "filled", label: "Filled" },
+      { value: "pencil", label: "Pencil Sketch" },
+      { value: "ink", label: "Ink" },
+      { value: "technical", label: "Technical Drawing" },
+      { value: "engraving", label: "Engraving" },
+      { value: "woodcut", label: "Woodcut" },
+    ],
+    group: "rendering",
+  },
+  {
     key: "wireframe",
     label: "Wireframe",
     type: "boolean",
@@ -192,6 +207,7 @@ export interface BuildingLayerProps {
   positionX: number;
   positionZ: number;
   rotationDeg: number;
+  renderMode: RenderMode;
   wireframe: boolean;
   seed: number;
 }
@@ -210,6 +226,7 @@ function resolveProps(properties: LayerProperties | Readonly<Record<string, unkn
     positionX: (properties.positionX as number) ?? 0,
     positionZ: (properties.positionZ as number) ?? 30,
     rotationDeg: (properties.rotationDeg as number) ?? 0,
+    renderMode: (properties.renderMode as RenderMode) ?? "pencil",
     wireframe: (properties.wireframe as boolean) ?? false,
     seed: (properties.seed as number) ?? 42,
   };
@@ -278,7 +295,7 @@ export const buildingLayerType: LayerTypeDefinition = {
       };
     }
 
-    const items = renderBuilding(building, camera, viewport, palette, p.wireframe);
+    const items = renderBuilding(building, camera, viewport, palette, p.wireframe, p.renderMode);
 
     ctx.save();
     for (const item of items) {

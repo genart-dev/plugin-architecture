@@ -81,6 +81,13 @@ const addBuildingTool: McpToolDefinition = {
         type: "number",
         description: "0 = foundation only, 0.5 = complete, 1 = ruin (default: 0.5).",
       },
+      renderMode: {
+        type: "string",
+        enum: ["filled", "pencil", "ink", "technical", "engraving", "woodcut"],
+        description: "Illustration render mode (default: pencil). " +
+          "filled = classic solid fill, pencil = multi-pass graphite, ink = confident ink lines, " +
+          "technical = precise architectural drawing, engraving = crosshatch, woodcut = bold gouged.",
+      },
       seed: { type: "number", description: "PRNG seed for deterministic generation." },
     },
     required: ["style"],
@@ -105,6 +112,7 @@ const addBuildingTool: McpToolDefinition = {
     if (input.positionZ !== undefined) props.positionZ = input.positionZ as number;
     if (input.rotationDeg !== undefined) props.rotationDeg = input.rotationDeg as number;
     if (input.constructionState !== undefined) props.constructionState = input.constructionState as number;
+    if (input.renderMode !== undefined) props.renderMode = input.renderMode as string;
     if (input.seed !== undefined) props.seed = input.seed as number;
 
     const layer: DesignLayer = {
@@ -278,6 +286,54 @@ const setConstructionStateTool: McpToolDefinition = {
 };
 
 // ---------------------------------------------------------------------------
+// set_render_mode
+// ---------------------------------------------------------------------------
+
+const RENDER_MODES = ["filled", "pencil", "ink", "technical", "engraving", "woodcut"] as const;
+
+const setRenderModeTool: McpToolDefinition = {
+  name: "set_render_mode",
+  description:
+    "Set the illustration render mode of a building layer. " +
+    "Modes: filled (classic solid), pencil (graphite sketch), ink (confident lines), " +
+    "technical (precise architectural), engraving (crosshatch), woodcut (bold gouged).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      layerId: { type: "string", description: "Building layer ID (omit to use first building)." },
+      mode: {
+        type: "string",
+        enum: [...RENDER_MODES],
+        description: "Render mode.",
+      },
+    },
+    required: ["mode"],
+  } satisfies JsonSchema,
+
+  async handler(input: Record<string, unknown>, context: McpToolContext): Promise<McpToolResult> {
+    const mode = input.mode as string;
+    if (!RENDER_MODES.includes(mode as typeof RENDER_MODES[number])) {
+      return errorResult(`Unknown render mode '${mode}'. Available: ${RENDER_MODES.join(", ")}.`);
+    }
+
+    let layer: DesignLayer | undefined;
+    if (input.layerId) {
+      layer = context.layers.getAll().find((l) => l.id === input.layerId);
+    } else {
+      layer = context.layers.getAll().find((l) => l.type === "architecture:building");
+    }
+
+    if (!layer) return errorResult("No architecture:building layer found.");
+
+    const props = { ...layer.properties, renderMode: mode } as LayerProperties;
+    context.layers.updateProperties(layer.id, props);
+    context.emitChange("layer-updated");
+
+    return textResult(`Set render mode to '${mode}'.`);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Export all tools
 // ---------------------------------------------------------------------------
 
@@ -287,4 +343,5 @@ export const architectureMcpTools: McpToolDefinition[] = [
   listArchitectureStylesTool,
   listArchitectureElementsTool,
   setConstructionStateTool,
+  setRenderModeTool,
 ];

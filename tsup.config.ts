@@ -16,5 +16,6 @@ export default defineConfig({
   noExternal: [
     "@genart-dev/projection",
     "@genart-dev/plugin-perspective",
+    "@genart-dev/illustration",
   ],
 });

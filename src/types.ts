@@ -188,6 +188,19 @@ export interface ElementRenderResult {
 }
 
 // ---------------------------------------------------------------------------
+// Render Mode
+// ---------------------------------------------------------------------------
+
+/** Illustration rendering mode for architecture. */
+export type RenderMode =
+  | "filled"     // Classic canvas2d fill+stroke (v0.1 default)
+  | "pencil"     // Multi-pass graphite sketch
+  | "ink"        // Confident ink lines with variation
+  | "technical"  // Precise, uniform architectural drawing
+  | "engraving"  // Crosshatch engraving
+  | "woodcut";   // Bold gouged lines
+
+// ---------------------------------------------------------------------------
 // Render Style (passed to element draw functions)
 // ---------------------------------------------------------------------------
 
@@ -205,6 +218,8 @@ export interface RenderStyle {
   readonly detail: number;
   /** Whether to draw structural lines only (wireframe mode). */
   readonly wireframe: boolean;
+  /** Illustration render mode. Default: "filled". */
+  readonly renderMode?: RenderMode;
 }
 
 // ---------------------------------------------------------------------------
