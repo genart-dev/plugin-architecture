@@ -16,7 +16,7 @@ import type {
 import {
   generateStrokeOutline,
 } from "@genart-dev/illustration";
-import type { ScreenQuad, ClassifiedScreenQuad, RenderStyle, RenderMode } from "../types.js";
+import type { ScreenQuad, ClassifiedScreenQuad, RenderStyle, RenderMode, FaceLighting } from "../types.js";
 import { EDGE_WEIGHTS } from "../types.js";
 import { getStrategy } from "./strategies.js";
 import { drawMarks } from "./draw-marks.js";
@@ -25,6 +25,17 @@ import { drawMarks } from "./draw-marks.js";
 function isClassified(quad: ScreenQuad): quad is ClassifiedScreenQuad {
   return "edgeClasses" in quad;
 }
+
+// ---------------------------------------------------------------------------
+// Lighting-driven hatching parameters (Phase 2: hatching-as-value)
+// ---------------------------------------------------------------------------
+
+/** Hatching density and opacity per lighting class. */
+const HATCH_PARAMS: Record<FaceLighting, { density: number; opacity: number }> = {
+  lit:     { density: 0.10, opacity: 0.25 },
+  ambient: { density: 0.40, opacity: 0.40 },
+  shadow:  { density: 0.85, opacity: 0.60 },
+};
 
 /**
  * Collect unique corners from a quad (handles degenerate triangles).
@@ -135,41 +146,51 @@ export function drawQuadIllustrated(
       ctx.closePath();
     };
 
+    // Resolve lighting for hatching-as-value modes
+    const lighting: FaceLighting = style.lighting ?? "ambient";
+    const hatch = HATCH_PARAMS[lighting];
+
     switch (mode) {
       case "pencil": {
-        // Solid base fill — walls must read as opaque surfaces, not glass
+        // Phase 2: white occlusion base + lighting-driven hatching
+        // Lit faces = near-white paper; shadow faces = dense graphite
         clipPath();
-        ctx.globalAlpha = style.opacity * 0.92;
-        ctx.fillStyle = style.fillColor;
+        ctx.globalAlpha = style.opacity * 0.12;
+        ctx.fillStyle = "#ffffff";
         ctx.fill();
 
-        const fillConfig: FillConfig = {
-          density: 0.5 + style.detail * 0.5,
-          weight: Math.max(0.5, style.strokeWeight * 0.4),
-          angle: Math.PI / 4 + rng() * 0.3,
-          jitter: 0.2,
-          gradient: { angle: Math.PI / 2, strength: 0.4 },
-        };
-        const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
-        drawMarks(ctx, fillMarks, style.strokeColor, style.opacity * 0.25);
+        // Hatching density driven by face lighting
+        if (hatch.density > 0.05) {
+          const fillConfig: FillConfig = {
+            density: hatch.density + style.detail * 0.2,
+            weight: Math.max(0.5, style.strokeWeight * 0.4),
+            angle: Math.PI / 4 + rng() * 0.3,
+            jitter: 0.2,
+            gradient: { angle: Math.PI / 2, strength: 0.3 },
+          };
+          const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
+          drawMarks(ctx, fillMarks, style.strokeColor, style.opacity * hatch.opacity);
+        }
         break;
       }
       case "ink": {
-        // Bold wash fill — fully opaque base, marks add texture on top
+        // Phase 2: thin occlusion wash + lighting-driven ink marks
+        // Lit faces = light wash; shadow faces = dense dark ink
         clipPath();
-        ctx.globalAlpha = style.opacity * 0.95;
-        ctx.fillStyle = style.fillColor;
+        ctx.globalAlpha = style.opacity * 0.15;
+        ctx.fillStyle = "#ffffff";
         ctx.fill();
 
-        // Wash texture — sparse marks for ink wash feel
-        const washConfig: FillConfig = {
-          density: 0.3,
-          weight: Math.max(0.8, style.strokeWeight * 0.6),
-          angle: Math.PI / 6,
-          jitter: 0.3,
-        };
-        const washMarks = strategy.fill.generateFill(pts, washConfig, rng);
-        drawMarks(ctx, washMarks, style.strokeColor, style.opacity * 0.2);
+        if (hatch.density > 0.05) {
+          const washConfig: FillConfig = {
+            density: hatch.density * 0.8,
+            weight: Math.max(0.8, style.strokeWeight * 0.6),
+            angle: Math.PI / 6,
+            jitter: 0.3,
+          };
+          const washMarks = strategy.fill.generateFill(pts, washConfig, rng);
+          drawMarks(ctx, washMarks, style.strokeColor, style.opacity * hatch.opacity);
+        }
         break;
       }
       case "technical": {
@@ -181,37 +202,43 @@ export function drawQuadIllustrated(
         break;
       }
       case "engraving": {
-        // Solid base fill + dense cross-hatching defines tonal form
+        // Phase 2: white occlusion + lighting-driven cross-hatching
+        // Lit faces = sparse lines; shadow faces = dense crosshatch
         clipPath();
-        ctx.globalAlpha = style.opacity * 0.85;
-        ctx.fillStyle = style.fillColor;
+        ctx.globalAlpha = style.opacity * 0.12;
+        ctx.fillStyle = "#ffffff";
         ctx.fill();
 
-        // Primary hatching direction
-        const hatchConfig1: FillConfig = {
-          density: 0.7 + style.detail * 0.3,
-          weight: Math.max(0.4, style.strokeWeight * 0.35),
-          angle: Math.PI / 4 + rng() * 0.15,
-          jitter: 0.05,
-        };
-        const hatchMarks1 = strategy.fill.generateFill(pts, hatchConfig1, rng);
-        drawMarks(ctx, hatchMarks1, style.strokeColor, style.opacity * 0.5);
+        if (hatch.density > 0.05) {
+          // Primary hatching direction
+          const hatchConfig1: FillConfig = {
+            density: hatch.density + style.detail * 0.15,
+            weight: Math.max(0.4, style.strokeWeight * 0.35),
+            angle: Math.PI / 4 + rng() * 0.15,
+            jitter: 0.05,
+          };
+          const hatchMarks1 = strategy.fill.generateFill(pts, hatchConfig1, rng);
+          drawMarks(ctx, hatchMarks1, style.strokeColor, style.opacity * hatch.opacity);
 
-        // Cross-hatching (perpendicular)
-        const hatchConfig2: FillConfig = {
-          density: 0.4 + style.detail * 0.3,
-          weight: Math.max(0.3, style.strokeWeight * 0.3),
-          angle: -Math.PI / 4 + rng() * 0.15,
-          jitter: 0.05,
-        };
-        const hatchMarks2 = strategy.fill.generateFill(pts, hatchConfig2, rng);
-        drawMarks(ctx, hatchMarks2, style.strokeColor, style.opacity * 0.35);
+          // Cross-hatching only on ambient + shadow faces
+          if (lighting !== "lit") {
+            const hatchConfig2: FillConfig = {
+              density: (hatch.density - 0.15) * 0.7 + style.detail * 0.15,
+              weight: Math.max(0.3, style.strokeWeight * 0.3),
+              angle: -Math.PI / 4 + rng() * 0.15,
+              jitter: 0.05,
+            };
+            const hatchMarks2 = strategy.fill.generateFill(pts, hatchConfig2, rng);
+            drawMarks(ctx, hatchMarks2, style.strokeColor, style.opacity * hatch.opacity * 0.7);
+          }
+        }
         break;
       }
       case "woodcut": {
-        // Bold, high-opacity fills — strong black/white contrast
+        // Woodcut keeps solid fills — it's a relief medium, not hatched
+        // But still use lighting for value: lit = lighter, shadow = darker
         clipPath();
-        ctx.globalAlpha = style.opacity * 0.9;
+        ctx.globalAlpha = style.opacity * (lighting === "lit" ? 0.75 : lighting === "shadow" ? 0.95 : 0.85);
         ctx.fillStyle = style.fillColor;
         ctx.fill();
         break;
@@ -281,6 +308,7 @@ export function drawQuadWithHatchingIllustrated(
   const strategy = getStrategy(mode as Exclude<RenderMode, "filled">);
 
   // ── Mode-specific fill for hatched quads ──
+  // Phase 2: lighting-driven hatching density
   if (!style.wireframe) {
     const clipPath = () => {
       ctx.beginPath();
@@ -289,29 +317,38 @@ export function drawQuadWithHatchingIllustrated(
       ctx.closePath();
     };
 
-    // Base occlusion fill — walls must be solid, not transparent
-    const baseOpacity = mode === "technical" ? 0.15
-      : mode === "engraving" ? 0.85
-      : mode === "woodcut" ? 0.95
-      : mode === "ink" ? 0.95
-      : 0.92; // pencil
-    clipPath();
-    ctx.globalAlpha = style.opacity * baseOpacity;
-    ctx.fillStyle = mode === "technical" ? "#ffffff" : style.fillColor;
-    ctx.fill();
+    const lighting: FaceLighting = style.lighting ?? "ambient";
+    const hatch = HATCH_PARAMS[lighting];
 
-    // Hatching texture on top (skip for woodcut — solid fill is enough)
-    if (mode !== "woodcut" && mode !== "technical") {
-      const fillConfig: FillConfig = {
-        density: 0.3 + hatchDensity * 0.08 * style.detail,
-        weight: Math.max(0.5, style.strokeWeight * 0.45),
-        angle: hatchAngle,
-        jitter: 0.1,
-      };
+    if (mode === "technical") {
+      // Pure line drawing — faint white occlusion
+      clipPath();
+      ctx.globalAlpha = style.opacity * 0.15;
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+    } else if (mode === "woodcut") {
+      // Woodcut: solid fill with lighting-modulated value
+      clipPath();
+      ctx.globalAlpha = style.opacity * (lighting === "lit" ? 0.75 : lighting === "shadow" ? 0.95 : 0.85);
+      ctx.fillStyle = style.fillColor;
+      ctx.fill();
+    } else {
+      // Pencil/ink/engraving: white occlusion + lighting-driven hatching
+      clipPath();
+      ctx.globalAlpha = style.opacity * 0.12;
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
 
-      const hatchOpacity = mode === "engraving" ? 0.5 : mode === "ink" ? 0.25 : 0.3;
-      const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
-      drawMarks(ctx, fillMarks, style.strokeColor, style.opacity * hatchOpacity);
+      if (hatch.density > 0.05) {
+        const fillConfig: FillConfig = {
+          density: hatch.density + hatchDensity * 0.04 * style.detail,
+          weight: Math.max(0.5, style.strokeWeight * 0.45),
+          angle: hatchAngle,
+          jitter: 0.1,
+        };
+        const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
+        drawMarks(ctx, fillMarks, style.strokeColor, style.opacity * hatch.opacity);
+      }
     }
   }
 
