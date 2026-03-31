@@ -78,8 +78,10 @@ export function compositeBuilding(
 
   const wallBaseY = baseY + grammar.proportions.baseHeight;
   const wallDepth = buildingWidth * grammar.proportions.wallThickness;
-  // Front face Z — windows/doors must sit at or in front of this
+  // Front face Z — the exterior face of the front wall
   const frontFaceZ = positionZ + buildingDepth / 2 + wallDepth / 2;
+  // Wall center Z — windows sit here so they can recess into the wall
+  const wallCenterZ = positionZ + buildingDepth / 2;
 
   // --- Walls (one per face) ---
   if (stateThreshold >= 0.15) {
@@ -177,13 +179,14 @@ export function compositeBuilding(
       for (let bay = 0; bay < bays; bay++) {
         const winX = positionX - buildingWidth / 2 + (bay + 0.5) * bayW;
 
-        // Front windows — offset forward from wall face to guarantee depth sort
+        // Front windows — positioned at wall center with wall depth
+        // so the window renderer can create proper recessed voids
         elements.push({
           type: winType,
-          position: { x: winX, y: winY, z: frontFaceZ + 0.08 },
+          position: { x: winX, y: winY, z: wallCenterZ },
           width: winW,
           height: winH,
-          depth: 0.1,
+          depth: wallDepth,
           rotation,
           detail: 1,
         });
@@ -202,11 +205,11 @@ export function compositeBuilding(
       position: {
         x: positionX,
         y: wallBaseY,
-        z: frontFaceZ + 0.08,
+        z: wallCenterZ,
       },
       width: doorW,
       height: doorH,
-      depth: 0.15,
+      depth: wallDepth,
       rotation,
       detail: 1,
     });
