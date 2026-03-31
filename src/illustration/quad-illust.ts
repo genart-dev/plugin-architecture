@@ -150,6 +150,13 @@ export function drawQuadIllustrated(
     const lighting: FaceLighting = style.lighting ?? "ambient";
     const hatch = HATCH_PARAMS[lighting];
 
+    // Phase 4: surface-following hatch direction from screen normal
+    // Hatching perpendicular to surface normal describes the form.
+    // Fall back to 45° diagonal for unclassified quads.
+    const baseHatchAngle = isClassified(quad)
+      ? quad.screenNormalAngle + Math.PI / 2
+      : Math.PI / 4;
+
     switch (mode) {
       case "pencil": {
         // Phase 2: white occlusion base + lighting-driven hatching
@@ -164,9 +171,9 @@ export function drawQuadIllustrated(
           const fillConfig: FillConfig = {
             density: hatch.density + style.detail * 0.2,
             weight: Math.max(0.5, style.strokeWeight * 0.4),
-            angle: Math.PI / 4 + rng() * 0.3,
+            angle: baseHatchAngle + rng() * 0.2,
             jitter: 0.2,
-            gradient: { angle: Math.PI / 2, strength: 0.3 },
+            gradient: { angle: baseHatchAngle + Math.PI / 2, strength: 0.3 },
           };
           const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
           drawMarks(ctx, fillMarks, style.strokeColor, style.opacity * hatch.opacity);
@@ -185,7 +192,7 @@ export function drawQuadIllustrated(
           const washConfig: FillConfig = {
             density: hatch.density * 0.8,
             weight: Math.max(0.8, style.strokeWeight * 0.6),
-            angle: Math.PI / 6,
+            angle: baseHatchAngle,
             jitter: 0.3,
           };
           const washMarks = strategy.fill.generateFill(pts, washConfig, rng);
@@ -210,22 +217,22 @@ export function drawQuadIllustrated(
         ctx.fill();
 
         if (hatch.density > 0.05) {
-          // Primary hatching direction
+          // Primary hatching — perpendicular to surface normal
           const hatchConfig1: FillConfig = {
             density: hatch.density + style.detail * 0.15,
             weight: Math.max(0.4, style.strokeWeight * 0.35),
-            angle: Math.PI / 4 + rng() * 0.15,
+            angle: baseHatchAngle + rng() * 0.1,
             jitter: 0.05,
           };
           const hatchMarks1 = strategy.fill.generateFill(pts, hatchConfig1, rng);
           drawMarks(ctx, hatchMarks1, style.strokeColor, style.opacity * hatch.opacity);
 
-          // Cross-hatching only on ambient + shadow faces
+          // Cross-hatching at perpendicular angle (ambient + shadow only)
           if (lighting !== "lit") {
             const hatchConfig2: FillConfig = {
               density: (hatch.density - 0.15) * 0.7 + style.detail * 0.15,
               weight: Math.max(0.3, style.strokeWeight * 0.3),
-              angle: -Math.PI / 4 + rng() * 0.15,
+              angle: baseHatchAngle + Math.PI / 2 + rng() * 0.1,
               jitter: 0.05,
             };
             const hatchMarks2 = strategy.fill.generateFill(pts, hatchConfig2, rng);
