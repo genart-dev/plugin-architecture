@@ -276,11 +276,17 @@ describe("depthAdjustedStyle", () => {
     expect(style.detail).toBeGreaterThan(0.8);
   });
 
-  it("distant objects have reduced opacity", () => {
-    const nearby = depthAdjustedStyle(palette, 0.1, 10, 1, false);
-    const distant = depthAdjustedStyle(palette, 0.9, 1, 1, false);
+  it("distant objects have reduced opacity in illustration modes", () => {
+    // Filled mode is always 1.0; test with pencil mode for atmospheric fade
+    const nearby = depthAdjustedStyle(palette, 0.1, 10, 1, false, "wall", 0, "pencil");
+    const distant = depthAdjustedStyle(palette, 0.9, 1, 1, false, "wall", 0, "pencil");
     expect(distant.opacity).toBeLessThan(nearby.opacity);
     expect(distant.opacity).toBeGreaterThanOrEqual(0.6); // opacity floor
+  });
+
+  it("filled mode is fully opaque regardless of depth", () => {
+    const distant = depthAdjustedStyle(palette, 0.9, 1, 1, false);
+    expect(distant.opacity).toBe(1);
   });
 
   it("wireframe mode is passed through", () => {

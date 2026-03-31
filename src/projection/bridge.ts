@@ -250,11 +250,12 @@ export function depthAdjustedStyle(
       baseFill = palette.wall;
   }
 
-  // Directional shading: darken shadow-facing sides, lighten lit sides
-  const shadingAmount = faceDot * 0.6;
-  const shadedFill = shadingAmount < 0
-    ? darken(baseFill, -shadingAmount)
-    : lighten(baseFill, shadingAmount);
+  // Directional shading: darken shadow faces, leave lit faces at base color.
+  // No lightening — base palette colors are already light, and lightening
+  // makes lit faces indistinguishable from the background.
+  const shadedFill = faceDot < 0
+    ? darken(baseFill, Math.min(0.5, -faceDot * 0.5))
+    : baseFill;
 
   // Atmospheric blend — fade toward background based on resolved opacity
   const atmosphereFade = 1 - resolved.opacity;
@@ -271,8 +272,9 @@ export function depthAdjustedStyle(
     fillColor: finalFill,
     // Weight from resolveDepth, with minimum floor
     strokeWeight: Math.max(1.2, resolved.weight * Math.min(5, scale * 0.08)),
-    // Opacity from resolveDepth, with floor
-    opacity: Math.max(0.6, resolved.opacity),
+    // Opacity: filled mode = fully opaque (depth sorting handles occlusion);
+    // illustration modes can fade for atmospheric perspective
+    opacity: renderMode === "filled" ? 1.0 : Math.max(0.6, resolved.opacity),
     detail: detail * resolved.detail,
     wireframe,
     renderMode,
@@ -286,8 +288,17 @@ export function depthAdjustedStyle(
 
 /** Render result item for depth sorting across buildings. */
 export interface RenderItem {
+  /** Sort key — linear world-space distance from camera (larger = further). */
   depth: number;
   draw: (ctx: CanvasRenderingContext2D) => void;
+}
+
+/** Compute linear distance from camera to a world-space point (for sorting). */
+function linearDepth(point: Vec3, camera: Camera): number {
+  const dx = point.x - camera.position.x;
+  const dy = point.y - camera.position.y;
+  const dz = point.z - camera.position.z;
+  return dx * dx + dy * dy + dz * dz; // squared distance is fine for sorting
 }
 
 // ---------------------------------------------------------------------------
@@ -361,10 +372,9 @@ export function renderBuilding(
     const result = renderer(element, rand);
     const hint = classifyElement(element.type);
 
-    const hasCustomDraw = hint === "opening"
-      || element.type === "wall-timber-frame"
-      || element.type === "wall-glass"
-      || element.type === "glass-curtain-wall";
+    // Group ALL elements — each element draws as one unit to prevent
+    // depth sort interleaving between quads of different elements.
+    const hasCustomDraw = true;
 
     const startIdx = allWorldQuads.length;
 
@@ -418,27 +428,42 @@ export function renderBuilding(
       const avgDot = groupWorld.reduce((s, q) => s + faceLightDot(q.normal), 0) / groupWorld.length;
       const style = depthAdjustedStyle(palette, avgDepth, avgScale, rec.detail, wireframe, rec.hint, avgDot, renderMode);
 
+      // Linear distance for sort (average of group world quad centers)
+      let sortDepth = 0;
+      for (const wq of groupWorld) {
+        const cx = (wq.corners[0].x + wq.corners[2].x) / 2;
+        const cy = (wq.corners[0].y + wq.corners[2].y) / 2;
+        const cz = (wq.corners[0].z + wq.corners[2].z) / 2;
+        sortDepth += linearDepth({ x: cx, y: cy, z: cz }, camera);
+      }
+      sortDepth /= groupWorld.length;
+
       items.push({
-        depth: avgDepth,
+        depth: sortDepth,
         draw: (ctx) => er.result.draw(ctx, groupQuads, style),
       });
     } else {
       // Per-quad: each visible quad is its own depth-sorted item
       if (!csq.visible) continue;
 
-      const dotVal = faceLightDot(allWorldQuads[qi]!.normal);
+      const wq = allWorldQuads[qi]!;
+      const dotVal = faceLightDot(wq.normal);
       const style = depthAdjustedStyle(palette, csq.depth, csq.scale, rec.detail, wireframe, rec.hint, dotVal, renderMode);
 
-      // Capture csq in closure for the draw call
+      // Linear distance from camera for sort key
+      const cx = (wq.corners[0].x + wq.corners[2].x) / 2;
+      const cy = (wq.corners[0].y + wq.corners[2].y) / 2;
+      const cz = (wq.corners[0].z + wq.corners[2].z) / 2;
+
       const quad = csq;
       items.push({
-        depth: csq.depth,
+        depth: linearDepth({ x: cx, y: cy, z: cz }, camera),
         draw: (ctx) => rec.draw(ctx, [quad], style),
       });
     }
   }
 
-  // Sort back to front
+  // Sort back to front (larger distance = further = drawn first)
   items.sort((a, b) => b.depth - a.depth);
   return items;
 }
