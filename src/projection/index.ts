@@ -8,3 +8,10 @@ export {
   renderBuilding,
 } from "./bridge.js";
 export type { RenderItem, ElementHint } from "./bridge.js";
+
+export {
+  buildEdgeAdjacency,
+  classifyQuadEdges,
+  classifyProjectedQuads,
+  computeScreenNormalAngle,
+} from "./edge-classify.js";

@@ -5,8 +5,10 @@ import type {
   ElementType,
   RenderStyle,
   ScreenQuad,
+  ClassifiedScreenQuad,
   WorldQuad,
 } from "../types.js";
+import { EDGE_WEIGHTS } from "../types.js";
 import {
   drawQuadIllustrated,
   drawQuadWithHatchingIllustrated,
@@ -150,9 +152,15 @@ function quadRng(quad: ScreenQuad): () => number {
   };
 }
 
+/** Check if a ScreenQuad has edge classification data. */
+function isClassified(quad: ScreenQuad): quad is ClassifiedScreenQuad {
+  return "edgeClasses" in quad;
+}
+
 /** Draw a projected quad as a filled and stroked polygon.
  *  Handles degenerate quads (triangles) where two corners collapse to one point.
- *  In illustration modes (pencil, ink, etc.), delegates to illustration strategies. */
+ *  In illustration modes (pencil, ink, etc.), delegates to illustration strategies.
+ *  Uses edge classification for line weight hierarchy when available. */
 export function drawQuad(
   ctx: CanvasRenderingContext2D,
   quad: ScreenQuad,
@@ -188,10 +196,27 @@ export function drawQuad(
     ctx.fill();
   }
 
-  ctx.globalAlpha = style.opacity;
-  ctx.strokeStyle = style.strokeColor;
-  ctx.lineWidth = style.strokeWeight;
-  ctx.stroke();
+  // Edge-classified stroke: vary line width per edge
+  const classified = isClassified(quad);
+  if (classified) {
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = style.strokeColor;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i]!;
+      const b = pts[(i + 1) % pts.length]!;
+      const weight = EDGE_WEIGHTS[quad.edgeClasses[(i % 4) as 0 | 1 | 2 | 3]];
+      ctx.lineWidth = style.strokeWeight * weight;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+  } else {
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = style.strokeColor;
+    ctx.lineWidth = style.strokeWeight;
+    ctx.stroke();
+  }
 }
 
 /** Draw a projected quad with hatching (detail-dependent line count).

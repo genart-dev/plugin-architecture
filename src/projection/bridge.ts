@@ -11,16 +11,19 @@ import {
 import type {
   WorldQuad,
   ScreenQuad,
+  ClassifiedScreenQuad,
   ElementInstance,
   ElementRenderResult,
   Building,
   RenderStyle,
   RenderMode,
   StylePalette,
+  FaceLighting,
 } from "../types.js";
 import { getElementRenderer } from "../elements/index.js";
 import { darken, lighten, lerpColor } from "../shared/color-utils.js";
 import { mulberry32 } from "../shared/prng.js";
+import { classifyProjectedQuads } from "./edge-classify.js";
 
 // ---------------------------------------------------------------------------
 // Camera resolution from layer properties (reads perspective:camera layer)
@@ -183,6 +186,13 @@ export function isBuildingVisible(
 /** Hint about what kind of element is being rendered — affects fill color. */
 export type ElementHint = "wall" | "roof" | "opening" | "structure" | "decorative";
 
+/** Classify face lighting from light dot product. */
+function classifyLighting(faceDot: number): FaceLighting {
+  if (faceDot > 0.3) return "lit";
+  if (faceDot > -0.2) return "ambient";
+  return "shadow";
+}
+
 /**
  * Compute a render style adjusted for distance from the camera.
  * Farther objects get thinner strokes, lower opacity, lower detail.
@@ -249,6 +259,7 @@ export function depthAdjustedStyle(
     detail: detail * (1 - atmosphereFade * 0.5),
     wireframe,
     renderMode,
+    lighting: classifyLighting(faceDot),
   };
 }
 
@@ -289,12 +300,28 @@ function faceLightDot(normal: Vec3): number {
   return (normal.x * LIGHT_DIR.x + normal.y * LIGHT_DIR.y + normal.z * LIGHT_DIR.z) / len;
 }
 
+/** Metadata tracked per-quad during the two-pass pipeline. */
+interface QuadRecord {
+  /** Index of the element that produced this quad. */
+  elementIdx: number;
+  /** The element's draw function. */
+  draw: ElementRenderResult["draw"];
+  /** Rendering hint. */
+  hint: ElementHint;
+  /** Element detail level. */
+  detail: number;
+  /** Whether this element uses grouped (custom) draw logic. */
+  grouped: boolean;
+}
+
 /**
  * Produce renderable items for a building — projects all elements
  * through the camera and returns **per-quad** depth-sorted draw commands.
  *
- * Each visible quad becomes its own RenderItem so depth sorting works
- * correctly across element boundaries (e.g. roof faces interleave with walls).
+ * Two-pass pipeline:
+ * 1. Collect all WorldQuads from all elements
+ * 2. Project + classify edges for the whole building at once
+ * 3. Create RenderItems with classified quads and edge-weighted styles
  */
 export function renderBuilding(
   building: Building,
@@ -305,56 +332,130 @@ export function renderBuilding(
   renderMode: RenderMode = "filled",
 ): RenderItem[] {
   const rand = mulberry32(building.config.seed);
-  const items: RenderItem[] = [];
 
-  for (const element of building.elements) {
+  // ── Pass 1: Collect all world quads ──
+  const allWorldQuads: WorldQuad[] = [];
+  const quadRecords: QuadRecord[] = [];
+  const elementResults: { result: ElementRenderResult; element: ElementInstance; startIdx: number; count: number }[] = [];
+
+  for (let ei = 0; ei < building.elements.length; ei++) {
+    const element = building.elements[ei]!;
     const renderer = getElementRenderer(element.type);
     const result = renderer(element, rand);
-    const projected = projectQuads(result.quads, camera, viewport);
     const hint = classifyElement(element.type);
 
-    // Elements with custom per-quad-index draw logic (windows, doors,
-    // timber-frame walls, glass walls, glass curtain walls) use the element
-    // draw function with all quads grouped. All other elements emit
-    // individual per-quad RenderItems for correct depth interleaving.
     const hasCustomDraw = hint === "opening"
       || element.type === "wall-timber-frame"
       || element.type === "wall-glass"
       || element.type === "glass-curtain-wall";
 
-    if (hasCustomDraw) {
-      // Openings (windows/doors) need quad index for frame vs glass.
-      // Group them as a single item using average depth.
-      const visibleQuads = projected.filter((q) => q.visible);
+    const startIdx = allWorldQuads.length;
+
+    for (const wq of result.quads) {
+      allWorldQuads.push(wq);
+      quadRecords.push({
+        elementIdx: ei,
+        draw: result.draw,
+        hint,
+        detail: element.detail,
+        grouped: hasCustomDraw,
+      });
+    }
+
+    elementResults.push({ result, element, startIdx, count: result.quads.length });
+  }
+
+  // ── Pass 2: Project all quads + classify edges ──
+  const vpMatrix = viewProjectionMatrix(camera, viewport);
+  const screenQuads = projectQuadsBatch(allWorldQuads, camera, viewport, vpMatrix);
+
+  // Classify edges across the entire building
+  const classified = classifyProjectedQuads(
+    allWorldQuads, screenQuads, camera, viewport, vpMatrix,
+  );
+
+  // ── Pass 3: Create RenderItems ──
+  const items: RenderItem[] = [];
+
+  // Track which grouped elements we've already emitted
+  const emittedGroups = new Set<number>();
+
+  for (let qi = 0; qi < classified.length; qi++) {
+    const csq = classified[qi]!;
+    const rec = quadRecords[qi]!;
+
+    if (rec.grouped) {
+      // Grouped elements: emit once per element (windows, doors, etc.)
+      if (emittedGroups.has(rec.elementIdx)) continue;
+      emittedGroups.add(rec.elementIdx);
+
+      const er = elementResults.find((e) => e.startIdx <= qi && qi < e.startIdx + e.count)!;
+      const groupQuads = classified.slice(er.startIdx, er.startIdx + er.count);
+      const groupWorld = allWorldQuads.slice(er.startIdx, er.startIdx + er.count);
+
+      const visibleQuads = groupQuads.filter((q) => q.visible);
       if (visibleQuads.length === 0) continue;
 
       const avgDepth = visibleQuads.reduce((s, q) => s + q.depth, 0) / visibleQuads.length;
       const avgScale = visibleQuads.reduce((s, q) => s + q.scale, 0) / visibleQuads.length;
-      const avgDot = result.quads.reduce((s, q) => s + faceLightDot(q.normal), 0) / result.quads.length;
-      const style = depthAdjustedStyle(palette, avgDepth, avgScale, element.detail, wireframe, hint, avgDot, renderMode);
+      const avgDot = groupWorld.reduce((s, q) => s + faceLightDot(q.normal), 0) / groupWorld.length;
+      const style = depthAdjustedStyle(palette, avgDepth, avgScale, rec.detail, wireframe, rec.hint, avgDot, renderMode);
 
       items.push({
         depth: avgDepth,
-        draw: (ctx) => result.draw(ctx, projected, style),
+        draw: (ctx) => er.result.draw(ctx, groupQuads, style),
       });
     } else {
-      // Per-quad sorting: each visible quad is its own depth-sorted item.
-      for (let i = 0; i < projected.length; i++) {
-        const sq = projected[i]!;
-        if (!sq.visible) continue;
+      // Per-quad: each visible quad is its own depth-sorted item
+      if (!csq.visible) continue;
 
-        const dot = i < result.quads.length ? faceLightDot(result.quads[i]!.normal) : 0;
-        const style = depthAdjustedStyle(palette, sq.depth, sq.scale, element.detail, wireframe, hint, dot, renderMode);
+      const dotVal = faceLightDot(allWorldQuads[qi]!.normal);
+      const style = depthAdjustedStyle(palette, csq.depth, csq.scale, rec.detail, wireframe, rec.hint, dotVal, renderMode);
 
-        items.push({
-          depth: sq.depth,
-          draw: (ctx) => result.draw(ctx, [sq], style),
-        });
-      }
+      // Capture csq in closure for the draw call
+      const quad = csq;
+      items.push({
+        depth: csq.depth,
+        draw: (ctx) => rec.draw(ctx, [quad], style),
+      });
     }
   }
 
   // Sort back to front
   items.sort((a, b) => b.depth - a.depth);
   return items;
+}
+
+/**
+ * Project many quads with a precomputed VP matrix (batch variant for renderBuilding).
+ */
+function projectQuadsBatch(
+  quads: WorldQuad[],
+  camera: Camera,
+  viewport: Viewport,
+  vpMatrix: Float64Array,
+): ScreenQuad[] {
+  return quads.map((quad) => {
+    const center = quadCentroid(quad.corners);
+
+    if (isBackFace(quad.normal, center, camera)) {
+      return {
+        corners: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }] as ScreenQuad["corners"],
+        depth: -1,
+        scale: 0,
+        visible: false,
+      };
+    }
+
+    const projected = quad.corners.map((c) =>
+      projectWithMatrix(c, vpMatrix, camera, viewport),
+    );
+
+    return {
+      corners: projected.map((p) => ({ x: p.x, y: p.y })) as unknown as ScreenQuad["corners"],
+      depth: projected.reduce((s, p) => s + p.depth, 0) / 4,
+      scale: projected.reduce((s, p) => s + p.scale, 0) / 4,
+      visible: projected.some((p) => p.visible),
+    };
+  });
 }

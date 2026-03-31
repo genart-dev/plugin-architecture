@@ -188,6 +188,32 @@ export interface ElementRenderResult {
 }
 
 // ---------------------------------------------------------------------------
+// Edge Classification (Phase 1: line weight hierarchy)
+// ---------------------------------------------------------------------------
+
+/** Edge classification for line weight hierarchy. */
+export type EdgeClass = "silhouette" | "fold" | "detail" | "ground";
+
+/** Weight multipliers per edge class — silhouette and ground dominate. */
+export const EDGE_WEIGHTS: Readonly<Record<EdgeClass, number>> = {
+  silhouette: 2.5,
+  fold: 1.0,
+  detail: 0.5,
+  ground: 3.0,
+};
+
+/** Screen-space projected quad with edge classification. */
+export interface ClassifiedScreenQuad extends ScreenQuad {
+  /** Classification for each of the 4 edges (edge i = corner[i]→corner[(i+1)%4]). */
+  readonly edgeClasses: readonly [EdgeClass, EdgeClass, EdgeClass, EdgeClass];
+  /** Projected surface normal angle in radians (0 = right, π/2 = up). Used for hatching direction. */
+  readonly screenNormalAngle: number;
+}
+
+/** Face lighting classification derived from light dot product. */
+export type FaceLighting = "lit" | "ambient" | "shadow";
+
+// ---------------------------------------------------------------------------
 // Render Mode
 // ---------------------------------------------------------------------------
 
@@ -220,6 +246,8 @@ export interface RenderStyle {
   readonly wireframe: boolean;
   /** Illustration render mode. Default: "filled". */
   readonly renderMode?: RenderMode;
+  /** Face lighting classification. Default: "ambient". */
+  readonly lighting?: FaceLighting;
 }
 
 // ---------------------------------------------------------------------------

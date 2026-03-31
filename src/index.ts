@@ -61,6 +61,9 @@ export {
   isBuildingVisible,
   depthAdjustedStyle,
   renderBuilding,
+  buildEdgeAdjacency,
+  classifyQuadEdges,
+  classifyProjectedQuads,
 } from "./projection/index.js";
 export type { RenderItem } from "./projection/index.js";
 
@@ -89,6 +92,9 @@ export type {
   ExperimentalStyle,
   ElementCategory,
   ElementType,
+  EdgeClass,
+  ClassifiedScreenQuad,
+  FaceLighting,
   WorldQuad,
   ScreenQuad,
   ElementInstance,
@@ -102,6 +108,7 @@ export type {
   StylePalette,
   StyleElementPalette,
 } from "./types.js";
+export { EDGE_WEIGHTS } from "./types.js";
 
 // Shared utilities
 export { mulberry32 } from "./shared/prng.js";

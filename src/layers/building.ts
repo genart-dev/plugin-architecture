@@ -9,6 +9,7 @@ import type {
 import type { Camera, Viewport, Vec3 } from "@genart-dev/projection";
 import { createCamera, viewProjectionMatrix, projectWithMatrix } from "@genart-dev/projection";
 import type { ArchitecturalStyleName, BuildingConfig, RenderMode } from "../types.js";
+import { EDGE_WEIGHTS } from "../types.js";
 import { compositeBuilding, defaultBuildingConfig } from "../compositor.js";
 import { renderBuilding, makeViewport } from "../projection/index.js";
 import { requireStyle, listStyles } from "../styles/index.js";
@@ -330,16 +331,16 @@ export const buildingLayerType: LayerTypeDefinition = {
       item.draw(ctx);
     }
 
-    // Ground contact line — dark line at building base for grounding
+    // Ground contact line — heaviest line weight (ground edge class)
     const baseCorners: Vec3[] = [
       { x: bx - building.width / 2, y: 0, z: bz + building.depth / 2 },
       { x: bx + building.width / 2, y: 0, z: bz + building.depth / 2 },
     ];
     const projBase = baseCorners.map((c) => projectWithMatrix(c, vpMatrix, camera, viewport));
     if (projBase[0]!.visible && projBase[1]!.visible) {
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.7;
       ctx.strokeStyle = palette.stroke;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = Math.max(2.5, 1.2 * EDGE_WEIGHTS.ground);
       ctx.beginPath();
       ctx.moveTo(projBase[0]!.x, projBase[0]!.y);
       ctx.lineTo(projBase[1]!.x, projBase[1]!.y);

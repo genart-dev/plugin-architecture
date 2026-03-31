@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { createCamera } from "@genart-dev/projection";
+import { createCamera, viewProjectionMatrix } from "@genart-dev/projection";
 import {
   makeViewport,
   projectQuad,
   projectQuads,
   isBuildingVisible,
   depthAdjustedStyle,
+  buildEdgeAdjacency,
+  classifyQuadEdges,
+  classifyProjectedQuads,
 } from "../src/projection/index.js";
 import { compositeBuilding, defaultBuildingConfig } from "../src/compositor.js";
 import type { WorldQuad } from "../src/types.js";
@@ -112,6 +115,151 @@ describe("isBuildingVisible", () => {
   });
 });
 
+describe("buildEdgeAdjacency", () => {
+  it("finds shared edges between adjacent quads", () => {
+    // Two quads sharing an edge at x=0
+    const quads: WorldQuad[] = [
+      {
+        corners: [
+          { x: -1, y: 0, z: 0 },
+          { x: 0, y: 0, z: 0 },
+          { x: 0, y: 1, z: 0 },
+          { x: -1, y: 1, z: 0 },
+        ],
+        normal: { x: 0, y: 0, z: -1 },
+      },
+      {
+        corners: [
+          { x: 0, y: 0, z: 0 },
+          { x: 1, y: 0, z: 0 },
+          { x: 1, y: 1, z: 0 },
+          { x: 0, y: 1, z: 0 },
+        ],
+        normal: { x: 0, y: 0, z: -1 },
+      },
+    ];
+
+    const adj = buildEdgeAdjacency(quads);
+    // The shared edge (0,0,0)-(0,1,0) should have both quad indices
+    let sharedCount = 0;
+    for (const entry of adj.values()) {
+      if (entry.quadIndices.length === 2) sharedCount++;
+    }
+    expect(sharedCount).toBe(1);
+  });
+});
+
+describe("classifyQuadEdges", () => {
+  it("classifies ground edges at y≈0", () => {
+    const quad: WorldQuad = {
+      corners: [
+        { x: -1, y: 0, z: 10 },
+        { x: 1, y: 0, z: 10 },
+        { x: 1, y: 2, z: 10 },
+        { x: -1, y: 2, z: 10 },
+      ],
+      normal: { x: 0, y: 0, z: -1 },
+    };
+
+    const adj = buildEdgeAdjacency([quad]);
+    const classes = classifyQuadEdges(0, [quad], [true], adj);
+
+    // Bottom edge (corner 0→1) has both y=0 → ground
+    expect(classes[0]).toBe("ground");
+    // Other edges have no neighbors → silhouette
+    expect(classes[1]).toBe("silhouette");
+    expect(classes[2]).toBe("silhouette");
+    expect(classes[3]).toBe("silhouette");
+  });
+
+  it("classifies shared coplanar edges as detail", () => {
+    const quads: WorldQuad[] = [
+      {
+        corners: [
+          { x: -1, y: 0.5, z: 10 },
+          { x: 0, y: 0.5, z: 10 },
+          { x: 0, y: 2, z: 10 },
+          { x: -1, y: 2, z: 10 },
+        ],
+        normal: { x: 0, y: 0, z: -1 },
+      },
+      {
+        corners: [
+          { x: 0, y: 0.5, z: 10 },
+          { x: 1, y: 0.5, z: 10 },
+          { x: 1, y: 2, z: 10 },
+          { x: 0, y: 2, z: 10 },
+        ],
+        normal: { x: 0, y: 0, z: -1 },
+      },
+    ];
+
+    const adj = buildEdgeAdjacency(quads);
+    const classes0 = classifyQuadEdges(0, quads, [true, true], adj);
+
+    // Edge 1 (corner 1→2 of quad 0) is shared with quad 1, same normal → detail
+    expect(classes0[1]).toBe("detail");
+  });
+
+  it("classifies perpendicular shared edges as fold", () => {
+    // Front face and right face of a box share an edge at x=1
+    const quads: WorldQuad[] = [
+      {
+        corners: [
+          { x: -1, y: 1, z: 10 },
+          { x: 1, y: 1, z: 10 },
+          { x: 1, y: 3, z: 10 },
+          { x: -1, y: 3, z: 10 },
+        ],
+        normal: { x: 0, y: 0, z: -1 }, // Front face
+      },
+      {
+        corners: [
+          { x: 1, y: 1, z: 10 },
+          { x: 1, y: 1, z: 12 },
+          { x: 1, y: 3, z: 12 },
+          { x: 1, y: 3, z: 10 },
+        ],
+        normal: { x: 1, y: 0, z: 0 }, // Right face
+      },
+    ];
+
+    const adj = buildEdgeAdjacency(quads);
+    const classes0 = classifyQuadEdges(0, quads, [true, true], adj);
+
+    // Edge 1 (corner 1→2) is shared with the right face at 90° → fold
+    expect(classes0[1]).toBe("fold");
+  });
+});
+
+describe("classifyProjectedQuads", () => {
+  it("returns ClassifiedScreenQuads with edge data", () => {
+    const camera = createCamera();
+    const viewport = makeViewport(800, 600);
+
+    const quads: WorldQuad[] = [
+      {
+        corners: [
+          { x: -2, y: 0, z: 20 },
+          { x: 2, y: 0, z: 20 },
+          { x: 2, y: 4, z: 20 },
+          { x: -2, y: 4, z: 20 },
+        ],
+        normal: { x: 0, y: 0, z: -1 },
+      },
+    ];
+
+    const screenQuads = projectQuads(quads, camera, viewport);
+    const vpMatrix = viewProjectionMatrix(camera, viewport);
+    const classified = classifyProjectedQuads(quads, screenQuads, camera, viewport, vpMatrix);
+
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.edgeClasses).toBeDefined();
+    expect(classified[0]!.edgeClasses).toHaveLength(4);
+    expect(typeof classified[0]!.screenNormalAngle).toBe("number");
+  });
+});
+
 describe("depthAdjustedStyle", () => {
   const palette = {
     wall: "#e8dcc8",
@@ -138,5 +286,16 @@ describe("depthAdjustedStyle", () => {
   it("wireframe mode is passed through", () => {
     const style = depthAdjustedStyle(palette, 0.5, 5, 1, true);
     expect(style.wireframe).toBe(true);
+  });
+
+  it("classifies face lighting from faceDot", () => {
+    const lit = depthAdjustedStyle(palette, 0.1, 5, 1, false, "wall", 0.8);
+    expect(lit.lighting).toBe("lit");
+
+    const ambient = depthAdjustedStyle(palette, 0.1, 5, 1, false, "wall", 0.1);
+    expect(ambient.lighting).toBe("ambient");
+
+    const shadow = depthAdjustedStyle(palette, 0.1, 5, 1, false, "wall", -0.5);
+    expect(shadow.lighting).toBe("shadow");
   });
 });

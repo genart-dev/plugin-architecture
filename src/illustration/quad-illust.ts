@@ -16,9 +16,15 @@ import type {
 import {
   generateStrokeOutline,
 } from "@genart-dev/illustration";
-import type { ScreenQuad, RenderStyle, RenderMode } from "../types.js";
+import type { ScreenQuad, ClassifiedScreenQuad, RenderStyle, RenderMode } from "../types.js";
+import { EDGE_WEIGHTS } from "../types.js";
 import { getStrategy } from "./strategies.js";
 import { drawMarks } from "./draw-marks.js";
+
+/** Check if a ScreenQuad is a ClassifiedScreenQuad (has edge classes). */
+function isClassified(quad: ScreenQuad): quad is ClassifiedScreenQuad {
+  return "edgeClasses" in quad;
+}
 
 /**
  * Collect unique corners from a quad (handles degenerate triangles).
@@ -221,19 +227,29 @@ export function drawQuadIllustrated(
   }
 
   // ── Stroke edges with illustration mark strategy ──
+  // Apply edge weight multipliers from classification
+  const classified = isClassified(quad);
   const modeKey = mode as Exclude<RenderMode, "filled">;
-  const markConfig: MarkConfig = {
-    density: mode === "engraving" ? 0.8 : mode === "woodcut" ? 0.5 : 0.5 + style.detail * 0.3,
-    weight: mode === "woodcut" ? style.strokeWeight * 2.2 : mode === "ink" ? style.strokeWeight * 1.4 : style.strokeWeight,
-    jitter: mode === "technical" ? 0 : mode === "ink" ? 0.12 : mode === "woodcut" ? 0.04 : 0.25,
-    passes: mode === "pencil" ? 3 : mode === "engraving" ? 2 : 1,
-  };
+  const baseWeight = mode === "woodcut" ? style.strokeWeight * 2.2
+    : mode === "ink" ? style.strokeWeight * 1.4
+    : style.strokeWeight;
 
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i]!;
     const b = pts[(i + 1) % pts.length]!;
 
-    const profile = edgeToProfile(a, b, markConfig.weight, modeKey);
+    // Edge weight varies by classification
+    const edgeMultiplier = classified ? EDGE_WEIGHTS[quad.edgeClasses[(i % 4) as 0 | 1 | 2 | 3]] : 1.0;
+    const edgeWeight = baseWeight * edgeMultiplier;
+
+    const markConfig: MarkConfig = {
+      density: mode === "engraving" ? 0.8 : mode === "woodcut" ? 0.5 : 0.5 + style.detail * 0.3,
+      weight: edgeWeight,
+      jitter: mode === "technical" ? 0 : mode === "ink" ? 0.12 : mode === "woodcut" ? 0.04 : 0.25,
+      passes: mode === "pencil" ? 3 : mode === "engraving" ? 2 : 1,
+    };
+
+    const profile = edgeToProfile(a, b, edgeWeight, modeKey);
     const outline = generateStrokeOutline(profile);
     if (!outline) continue;
 
@@ -300,19 +316,27 @@ export function drawQuadWithHatchingIllustrated(
   }
 
   // ── Stroke edges ──
+  const classified = isClassified(quad);
   const modeKey = mode as Exclude<RenderMode, "filled">;
-  const markConfig: MarkConfig = {
-    density: mode === "engraving" ? 0.8 : mode === "woodcut" ? 0.5 : 0.6,
-    weight: mode === "woodcut" ? style.strokeWeight * 2.2 : mode === "ink" ? style.strokeWeight * 1.4 : style.strokeWeight,
-    jitter: mode === "technical" ? 0 : mode === "ink" ? 0.12 : mode === "woodcut" ? 0.04 : 0.25,
-    passes: mode === "pencil" ? 3 : mode === "engraving" ? 2 : 1,
-  };
+  const baseWeight = mode === "woodcut" ? style.strokeWeight * 2.2
+    : mode === "ink" ? style.strokeWeight * 1.4
+    : style.strokeWeight;
 
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i]!;
     const b = pts[(i + 1) % pts.length]!;
 
-    const profile = edgeToProfile(a, b, markConfig.weight, modeKey);
+    const edgeMultiplier = classified ? EDGE_WEIGHTS[quad.edgeClasses[(i % 4) as 0 | 1 | 2 | 3]] : 1.0;
+    const edgeWeight = baseWeight * edgeMultiplier;
+
+    const markConfig: MarkConfig = {
+      density: mode === "engraving" ? 0.8 : mode === "woodcut" ? 0.5 : 0.6,
+      weight: edgeWeight,
+      jitter: mode === "technical" ? 0 : mode === "ink" ? 0.12 : mode === "woodcut" ? 0.04 : 0.25,
+      passes: mode === "pencil" ? 3 : mode === "engraving" ? 2 : 1,
+    };
+
+    const profile = edgeToProfile(a, b, edgeWeight, modeKey);
     const outline = generateStrokeOutline(profile);
     if (!outline) continue;
 
