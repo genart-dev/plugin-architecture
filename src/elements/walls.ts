@@ -135,22 +135,23 @@ registerElement("wall-timber-frame", (el) => {
     quads,
     draw: (ctx, projected, style) => {
       if (projected.length === 0) return;
-      // Infill panel first (index 0)
+      // Infill panel first (index 0) — must be fully opaque to occlude
       const infill = projected[0]!;
       if (infill.visible) {
         const infillStyle: RenderStyle = {
           ...style,
-          fillColor: "#f0e6d0", // Cream/plaster infill
+          opacity: 1, // Full occlusion — infill must hide everything behind it
         };
         drawQuad(ctx, infill, infillStyle);
       }
-      // Timber members (darker wood)
+      // Timber members (darker wood) — use structure stroke color for contrast
       for (let i = 1; i < projected.length; i++) {
         const sq = projected[i]!;
         if (!sq.visible) continue;
         const timberStyle: RenderStyle = {
           ...style,
-          fillColor: "#5c3a1e",
+          fillColor: style.strokeColor,
+          opacity: Math.min(1, style.opacity + 0.15),
         };
         drawQuad(ctx, sq, timberStyle);
       }

@@ -77,6 +77,9 @@ export function compositeBuilding(
   }
 
   const wallBaseY = baseY + grammar.proportions.baseHeight;
+  const wallDepth = buildingWidth * grammar.proportions.wallThickness;
+  // Front face Z — windows/doors must sit at or in front of this
+  const frontFaceZ = positionZ + buildingDepth / 2 + wallDepth / 2;
 
   // --- Walls (one per face) ---
   if (stateThreshold >= 0.15) {
@@ -166,18 +169,18 @@ export function compositeBuilding(
   // --- Windows ---
   if (grammar.windowTypes.length > 0 && stateThreshold >= 0.35) {
     const winType = pickRandom(grammar.windowTypes, rand)!;
-    const winW = bayW * 0.4;
-    const winH = storyH * 0.5;
+    const winW = bayW * 0.55;
+    const winH = storyH * 0.55;
 
     for (let story = 0; story < stories; story++) {
       const winY = wallBaseY + story * storyH + storyH * 0.3;
       for (let bay = 0; bay < bays; bay++) {
         const winX = positionX - buildingWidth / 2 + (bay + 0.5) * bayW;
 
-        // Front windows
+        // Front windows — offset forward from wall face to guarantee depth sort
         elements.push({
           type: winType,
-          position: { x: winX, y: winY, z: positionZ + buildingDepth / 2 },
+          position: { x: winX, y: winY, z: frontFaceZ + 0.08 },
           width: winW,
           height: winH,
           depth: 0.1,
@@ -191,15 +194,15 @@ export function compositeBuilding(
   // --- Door (ground floor, center bay) ---
   if (grammar.doorTypes.length > 0 && stateThreshold >= 0.4) {
     const doorType = pickRandom(grammar.doorTypes, rand)!;
-    const doorW = bayW * 0.5;
-    const doorH = storyH * 0.7;
+    const doorW = bayW * 0.6;
+    const doorH = storyH * 0.8;
 
     elements.push({
       type: doorType,
       position: {
         x: positionX,
         y: wallBaseY,
-        z: positionZ + buildingDepth / 2 + 0.01,
+        z: frontFaceZ + 0.08,
       },
       width: doorW,
       height: doorH,
@@ -207,6 +210,30 @@ export function compositeBuilding(
       rotation,
       detail: 1,
     });
+  }
+
+  // --- Arches above windows (style-defining feature) ---
+  if (grammar.elements.arches.length > 0 && stateThreshold >= 0.4) {
+    const archType = pickRandom(grammar.elements.arches, rand)!;
+    const archW = bayW * 0.6;
+    const archH = storyH * 0.35;
+
+    for (let story = 0; story < stories; story++) {
+      const archY = wallBaseY + story * storyH + storyH * 0.3 + storyH * 0.5;
+      for (let bay = 0; bay < bays; bay++) {
+        const archX = positionX - buildingWidth / 2 + (bay + 0.5) * bayW;
+
+        elements.push({
+          type: archType,
+          position: { x: archX, y: archY, z: frontFaceZ + 0.01 },
+          width: archW,
+          height: archH,
+          depth: 0.1,
+          rotation,
+          detail: 0.9,
+        });
+      }
+    }
   }
 
   // --- Decorative elements ---

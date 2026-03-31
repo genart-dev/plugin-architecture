@@ -129,8 +129,10 @@ describe("depthAdjustedStyle", () => {
   });
 
   it("distant objects have reduced opacity", () => {
-    const style = depthAdjustedStyle(palette, 0.9, 1, 1, false);
-    expect(style.opacity).toBeLessThan(0.7);
+    const nearby = depthAdjustedStyle(palette, 0.1, 10, 1, false);
+    const distant = depthAdjustedStyle(palette, 0.9, 1, 1, false);
+    expect(distant.opacity).toBeLessThan(nearby.opacity);
+    expect(distant.opacity).toBeGreaterThanOrEqual(0.6); // opacity floor
   });
 
   it("wireframe mode is passed through", () => {

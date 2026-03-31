@@ -7,10 +7,10 @@ const gothic: StyleGrammar = {
   character: "Tall, vertical emphasis. Pointed arches, flying buttresses, tracery, spires.",
 
   proportions: {
-    storyHeight: 5.0,
-    bayWidth: 2.5,
+    storyHeight: 5.5,
+    bayWidth: 2.2,
     wallThickness: 0.1,
-    roofHeightRatio: 0.4,
+    roofHeightRatio: 0.55,
     baseHeight: 0.5,
   },
 

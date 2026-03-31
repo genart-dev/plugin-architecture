@@ -6,8 +6,8 @@ import type {
   RenderResources,
   ValidationError,
 } from "@genart-dev/core";
-import type { Camera, Viewport } from "@genart-dev/projection";
-import { createCamera } from "@genart-dev/projection";
+import type { Camera, Viewport, Vec3 } from "@genart-dev/projection";
+import { createCamera, viewProjectionMatrix, projectWithMatrix } from "@genart-dev/projection";
 import type { ArchitecturalStyleName, BuildingConfig, RenderMode } from "../types.js";
 import { compositeBuilding, defaultBuildingConfig } from "../compositor.js";
 import { renderBuilding, makeViewport } from "../projection/index.js";
@@ -298,9 +298,54 @@ export const buildingLayerType: LayerTypeDefinition = {
     const items = renderBuilding(building, camera, viewport, palette, p.wireframe, p.renderMode);
 
     ctx.save();
+
+    // Ground shadow — projected ellipse at y=0 beneath the building
+    const shadowPad = 0.3;
+    const shw = building.width / 2 + shadowPad;
+    const shd = building.depth / 2 + shadowPad;
+    const bx = building.position.x;
+    const bz = building.position.z;
+    const vpMatrix = viewProjectionMatrix(camera, viewport);
+    const shadowCorners: Vec3[] = [
+      { x: bx - shw, y: 0.01, z: bz - shd },
+      { x: bx + shw, y: 0.01, z: bz - shd },
+      { x: bx + shw, y: 0.01, z: bz + shd },
+      { x: bx - shw, y: 0.01, z: bz + shd },
+    ];
+    const projShadow = shadowCorners.map((c) => projectWithMatrix(c, vpMatrix, camera, viewport));
+    if (projShadow.some((p2) => p2.visible)) {
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = "#1a1a20";
+      ctx.beginPath();
+      ctx.moveTo(projShadow[0]!.x, projShadow[0]!.y);
+      for (let i = 1; i < projShadow.length; i++) {
+        ctx.lineTo(projShadow[i]!.x, projShadow[i]!.y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Building quads
     for (const item of items) {
       item.draw(ctx);
     }
+
+    // Ground contact line — dark line at building base for grounding
+    const baseCorners: Vec3[] = [
+      { x: bx - building.width / 2, y: 0, z: bz + building.depth / 2 },
+      { x: bx + building.width / 2, y: 0, z: bz + building.depth / 2 },
+    ];
+    const projBase = baseCorners.map((c) => projectWithMatrix(c, vpMatrix, camera, viewport));
+    if (projBase[0]!.visible && projBase[1]!.visible) {
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = palette.stroke;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(projBase[0]!.x, projBase[0]!.y);
+      ctx.lineTo(projBase[1]!.x, projBase[1]!.y);
+      ctx.stroke();
+    }
+
     ctx.restore();
   },
 

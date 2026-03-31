@@ -9,7 +9,7 @@
   "parameters": [],
   "colors": [],
   "state": { "seed": 42, "params": {}, "colorPalette": [] },
-  "algorithm": "function sketch(ctx, state) { var w=state.canvas.width, h=state.canvas.height; ctx.fillStyle='#f0ebe0'; ctx.fillRect(0,0,w,h); }",
+  "algorithm": "function sketch(ctx, state) { var w=state.canvas.width, h=state.canvas.height; ctx.fillStyle='#faf8f4'; ctx.fillRect(0,0,w,h); }",
   "layers": [
     {
       "id": "camera-01",

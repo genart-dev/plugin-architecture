@@ -40,24 +40,64 @@ function uniqueCorners(quad: ScreenQuad): Point2D[] {
 
 /**
  * Build a StrokeProfile from two consecutive points (one edge of a quad).
+ * `mode` controls pressure curve and taper to make render modes visually distinct.
  */
-function edgeToProfile(a: Point2D, b: Point2D, weight: number): StrokeProfile {
+function edgeToProfile(
+  a: Point2D,
+  b: Point2D,
+  weight: number,
+  mode: Exclude<RenderMode, "filled"> = "pencil",
+): StrokeProfile {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.sqrt(dx * dx + dy * dy);
-  // Sample along the edge for multi-point profile (required by pencil strategy)
-  const steps = Math.max(2, Math.ceil(len / 8));
+  // Finer sampling (3px) gives strategies enough points for distinct character
+  const steps = Math.max(4, Math.ceil(len / 3));
   const points = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
+    // Mode-specific pressure curves
+    let pressure: number;
+    switch (mode) {
+      case "pencil":
+        // Multi-pass feel: uneven, lighter at ends, heavier in middle
+        pressure = 0.4 + 0.5 * Math.sin(t * Math.PI) + 0.1 * Math.sin(t * Math.PI * 3);
+        break;
+      case "ink":
+        // Confident: heavy throughout, slight taper at start only
+        pressure = t < 0.15 ? 0.5 + t * 3.3 : 1.0;
+        break;
+      case "technical":
+        // Uniform pressure — precise mechanical lines
+        pressure = 0.85;
+        break;
+      case "engraving":
+        // Swelling line: thin→thick→thin
+        pressure = 0.3 + 0.7 * Math.sin(t * Math.PI);
+        break;
+      case "woodcut":
+        // Bold, high pressure with stepped plateaus
+        pressure = 0.7 + 0.3 * Math.round(Math.sin(t * Math.PI) * 3) / 3;
+        break;
+      default:
+        pressure = 0.6 + 0.4 * Math.sin(t * Math.PI);
+    }
     points.push({
       x: a.x + dx * t,
       y: a.y + dy * t,
       width: weight,
-      pressure: 0.6 + 0.4 * Math.sin(t * Math.PI), // lighter at ends
+      pressure,
     });
   }
-  return { points, taper: { start: weight * 0.5, end: weight * 0.5 } };
+
+  // Mode-specific taper
+  const taper = mode === "technical"
+    ? { start: 0, end: 0 }
+    : mode === "woodcut"
+      ? { start: weight * 0.2, end: weight * 0.2 }
+      : { start: weight * 0.5, end: weight * 0.5 };
+
+  return { points, taper };
 }
 
 /**
@@ -79,36 +119,121 @@ export function drawQuadIllustrated(
 
   const strategy = getStrategy(mode as Exclude<RenderMode, "filled">);
 
-  // ── Fill interior with illustration fill strategy ──
+  // ── Mode-specific fill approach ──
+  // Each mode uses a fundamentally different fill strategy to be visually distinct.
   if (!style.wireframe) {
-    const fillConfig: FillConfig = {
-      density: 0.3 + style.detail * 0.4,
-      weight: Math.max(0.3, style.strokeWeight * 0.35),
-      angle: Math.PI / 4 + rng() * 0.3, // slight angle variation
-      jitter: 0.15,
-      gradient: {
-        angle: Math.PI / 2, // top-to-bottom density
-        strength: 0.3,
-      },
+    const clipPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, pts[0]!.y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      ctx.closePath();
     };
 
-    const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
-    drawMarks(ctx, fillMarks, style.fillColor, style.opacity * 0.5);
+    switch (mode) {
+      case "pencil": {
+        // Solid base fill — walls must read as opaque surfaces, not glass
+        clipPath();
+        ctx.globalAlpha = style.opacity * 0.92;
+        ctx.fillStyle = style.fillColor;
+        ctx.fill();
+
+        const fillConfig: FillConfig = {
+          density: 0.5 + style.detail * 0.5,
+          weight: Math.max(0.5, style.strokeWeight * 0.4),
+          angle: Math.PI / 4 + rng() * 0.3,
+          jitter: 0.2,
+          gradient: { angle: Math.PI / 2, strength: 0.4 },
+        };
+        const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
+        drawMarks(ctx, fillMarks, style.strokeColor, style.opacity * 0.25);
+        break;
+      }
+      case "ink": {
+        // Bold wash fill — fully opaque base, marks add texture on top
+        clipPath();
+        ctx.globalAlpha = style.opacity * 0.95;
+        ctx.fillStyle = style.fillColor;
+        ctx.fill();
+
+        // Wash texture — sparse marks for ink wash feel
+        const washConfig: FillConfig = {
+          density: 0.3,
+          weight: Math.max(0.8, style.strokeWeight * 0.6),
+          angle: Math.PI / 6,
+          jitter: 0.3,
+        };
+        const washMarks = strategy.fill.generateFill(pts, washConfig, rng);
+        drawMarks(ctx, washMarks, style.strokeColor, style.opacity * 0.2);
+        break;
+      }
+      case "technical": {
+        // NO fill — pure line drawing. Just a very faint base for occlusion.
+        clipPath();
+        ctx.globalAlpha = style.opacity * 0.15;
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        break;
+      }
+      case "engraving": {
+        // Solid base fill + dense cross-hatching defines tonal form
+        clipPath();
+        ctx.globalAlpha = style.opacity * 0.85;
+        ctx.fillStyle = style.fillColor;
+        ctx.fill();
+
+        // Primary hatching direction
+        const hatchConfig1: FillConfig = {
+          density: 0.7 + style.detail * 0.3,
+          weight: Math.max(0.4, style.strokeWeight * 0.35),
+          angle: Math.PI / 4 + rng() * 0.15,
+          jitter: 0.05,
+        };
+        const hatchMarks1 = strategy.fill.generateFill(pts, hatchConfig1, rng);
+        drawMarks(ctx, hatchMarks1, style.strokeColor, style.opacity * 0.5);
+
+        // Cross-hatching (perpendicular)
+        const hatchConfig2: FillConfig = {
+          density: 0.4 + style.detail * 0.3,
+          weight: Math.max(0.3, style.strokeWeight * 0.3),
+          angle: -Math.PI / 4 + rng() * 0.15,
+          jitter: 0.05,
+        };
+        const hatchMarks2 = strategy.fill.generateFill(pts, hatchConfig2, rng);
+        drawMarks(ctx, hatchMarks2, style.strokeColor, style.opacity * 0.35);
+        break;
+      }
+      case "woodcut": {
+        // Bold, high-opacity fills — strong black/white contrast
+        clipPath();
+        ctx.globalAlpha = style.opacity * 0.9;
+        ctx.fillStyle = style.fillColor;
+        ctx.fill();
+        break;
+      }
+      default: {
+        // Fallback: standard fill
+        clipPath();
+        ctx.globalAlpha = style.opacity * 0.7;
+        ctx.fillStyle = style.fillColor;
+        ctx.fill();
+      }
+    }
   }
 
   // ── Stroke edges with illustration mark strategy ──
+  const modeKey = mode as Exclude<RenderMode, "filled">;
   const markConfig: MarkConfig = {
-    density: 0.5 + style.detail * 0.3,
-    weight: style.strokeWeight,
-    jitter: mode === "technical" ? 0 : 0.3,
-    passes: mode === "pencil" ? 3 : 1,
+    density: mode === "engraving" ? 0.8 : mode === "woodcut" ? 0.5 : 0.5 + style.detail * 0.3,
+    weight: mode === "woodcut" ? style.strokeWeight * 2.2 : mode === "ink" ? style.strokeWeight * 1.4 : style.strokeWeight,
+    jitter: mode === "technical" ? 0 : mode === "ink" ? 0.12 : mode === "woodcut" ? 0.04 : 0.25,
+    passes: mode === "pencil" ? 3 : mode === "engraving" ? 2 : 1,
   };
 
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i]!;
     const b = pts[(i + 1) % pts.length]!;
 
-    const profile = edgeToProfile(a, b, style.strokeWeight);
+    const profile = edgeToProfile(a, b, markConfig.weight, modeKey);
     const outline = generateStrokeOutline(profile);
     if (!outline) continue;
 
@@ -139,32 +264,55 @@ export function drawQuadWithHatchingIllustrated(
 
   const strategy = getStrategy(mode as Exclude<RenderMode, "filled">);
 
-  // ── Fill with directed hatching ──
+  // ── Mode-specific fill for hatched quads ──
   if (!style.wireframe) {
-    const fillConfig: FillConfig = {
-      density: 0.2 + hatchDensity * 0.08 * style.detail,
-      weight: Math.max(0.3, style.strokeWeight * 0.3),
-      angle: hatchAngle,
-      jitter: 0.1,
+    const clipPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, pts[0]!.y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      ctx.closePath();
     };
 
-    const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
-    drawMarks(ctx, fillMarks, style.fillColor, style.opacity * 0.4);
+    // Base occlusion fill — walls must be solid, not transparent
+    const baseOpacity = mode === "technical" ? 0.15
+      : mode === "engraving" ? 0.85
+      : mode === "woodcut" ? 0.95
+      : mode === "ink" ? 0.95
+      : 0.92; // pencil
+    clipPath();
+    ctx.globalAlpha = style.opacity * baseOpacity;
+    ctx.fillStyle = mode === "technical" ? "#ffffff" : style.fillColor;
+    ctx.fill();
+
+    // Hatching texture on top (skip for woodcut — solid fill is enough)
+    if (mode !== "woodcut" && mode !== "technical") {
+      const fillConfig: FillConfig = {
+        density: 0.3 + hatchDensity * 0.08 * style.detail,
+        weight: Math.max(0.5, style.strokeWeight * 0.45),
+        angle: hatchAngle,
+        jitter: 0.1,
+      };
+
+      const hatchOpacity = mode === "engraving" ? 0.5 : mode === "ink" ? 0.25 : 0.3;
+      const fillMarks = strategy.fill.generateFill(pts, fillConfig, rng);
+      drawMarks(ctx, fillMarks, style.strokeColor, style.opacity * hatchOpacity);
+    }
   }
 
   // ── Stroke edges ──
+  const modeKey = mode as Exclude<RenderMode, "filled">;
   const markConfig: MarkConfig = {
-    density: 0.6,
-    weight: style.strokeWeight,
-    jitter: mode === "technical" ? 0 : 0.25,
-    passes: mode === "pencil" ? 3 : 1,
+    density: mode === "engraving" ? 0.8 : mode === "woodcut" ? 0.5 : 0.6,
+    weight: mode === "woodcut" ? style.strokeWeight * 2.2 : mode === "ink" ? style.strokeWeight * 1.4 : style.strokeWeight,
+    jitter: mode === "technical" ? 0 : mode === "ink" ? 0.12 : mode === "woodcut" ? 0.04 : 0.25,
+    passes: mode === "pencil" ? 3 : mode === "engraving" ? 2 : 1,
   };
 
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i]!;
     const b = pts[(i + 1) % pts.length]!;
 
-    const profile = edgeToProfile(a, b, style.strokeWeight);
+    const profile = edgeToProfile(a, b, markConfig.weight, modeKey);
     const outline = generateStrokeOutline(profile);
     if (!outline) continue;
 

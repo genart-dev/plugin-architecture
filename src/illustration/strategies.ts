@@ -22,7 +22,7 @@ export interface IllustrationStrategy {
 
 const STRATEGIES: Record<Exclude<RenderMode, "filled">, IllustrationStrategy> = {
   pencil: { mark: pencilMark, fill: hatchFill },
-  ink: { mark: inkMark, fill: hatchFill },
+  ink: { mark: inkMark, fill: crosshatchFill },
   technical: { mark: technicalMark, fill: hatchFill },
   engraving: { mark: engravingMark, fill: crosshatchFill },
   woodcut: { mark: woodcutMark, fill: stippleFill },

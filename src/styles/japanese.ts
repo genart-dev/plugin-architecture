@@ -8,9 +8,9 @@ const japanese: StyleGrammar = {
 
   proportions: {
     storyHeight: 2.8,
-    bayWidth: 2.5,
+    bayWidth: 3.5,
     wallThickness: 0.04,
-    roofHeightRatio: 0.5,
+    roofHeightRatio: 0.6,
     baseHeight: 0.6,
   },
 

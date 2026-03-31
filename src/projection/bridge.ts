@@ -223,7 +223,8 @@ export function depthAdjustedStyle(
   }
 
   // Directional shading: darken shadow-facing sides, lighten lit sides
-  const shadingAmount = faceDot * 0.2; // subtle: ±20% darken/lighten
+  // Very strong contrast (±60%) — shadow faces must be clearly distinct from lit faces
+  const shadingAmount = faceDot * 0.6;
   const shadedFill = shadingAmount < 0
     ? darken(baseFill, -shadingAmount)
     : lighten(baseFill, shadingAmount);
@@ -241,9 +242,10 @@ export function depthAdjustedStyle(
   return {
     strokeColor: finalStroke,
     fillColor: finalFill,
-    // 3x multiplier vs old formula — visible strokes at all scales
-    strokeWeight: Math.max(0.8, (1 - atmosphereFade * 0.4) * Math.min(4, scale * 0.06)),
-    opacity: Math.max(0.3, 1 - atmosphereFade * 0.5),
+    // Edges must always read — 1.2 minimum, scale-responsive
+    strokeWeight: Math.max(1.2, (1 - atmosphereFade * 0.4) * Math.min(5, scale * 0.08)),
+    // Never go below 0.6 — buildings must read as solid, not ghostly
+    opacity: Math.max(0.6, 1 - atmosphereFade * 0.3),
     detail: detail * (1 - atmosphereFade * 0.5),
     wireframe,
     renderMode,

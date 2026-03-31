@@ -109,28 +109,38 @@ function drawWindow(
     if (!sq.visible) continue;
 
     if (i === 0) {
-      // Frame surround — slightly lighter than wall, thicker stroke
+      // Frame surround — lighter than wall for contrast, thicker stroke
       const frameStyle: RenderStyle = {
         ...style,
-        strokeWeight: style.strokeWeight * 1.2,
-        opacity: Math.min(1, style.opacity * 1.1),
+        strokeWeight: style.strokeWeight * 1.4,
+        opacity: Math.min(1, style.opacity * 1.15),
       };
       drawQuad(ctx, sq, frameStyle);
     } else if (i === 1) {
-      // Glass pane — very dark fill, full opacity for contrast
+      // Glass pane — very dark fill, high opacity for strong void contrast
       const glassStyle: RenderStyle = {
         ...style,
-        fillColor: "#0e0e1a",
+        fillColor: "#0a0a18",
         strokeWeight: style.strokeWeight * 0.8,
-        opacity: Math.min(1, style.opacity + 0.2),
+        opacity: Math.min(1, style.opacity + 0.35),
       };
       drawQuad(ctx, sq, glassStyle);
+
+      // Sill line below the glass pane — horizontal accent for readability
+      const c = sq.corners;
+      ctx.globalAlpha = style.opacity * 0.9;
+      ctx.strokeStyle = style.strokeColor;
+      ctx.lineWidth = style.strokeWeight * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(c[0].x, c[0].y);
+      ctx.lineTo(c[1].x, c[1].y);
+      ctx.stroke();
     } else {
       // Mullion bars — thicker for visibility
       const mullionStyle: RenderStyle = {
         ...style,
-        strokeWeight: style.strokeWeight * 0.7,
-        opacity: Math.min(1, style.opacity + 0.1),
+        strokeWeight: style.strokeWeight * 0.8,
+        opacity: Math.min(1, style.opacity + 0.15),
       };
       drawQuad(ctx, sq, mullionStyle);
     }
