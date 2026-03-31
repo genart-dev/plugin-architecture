@@ -24,6 +24,13 @@ import { getElementRenderer } from "../elements/index.js";
 import { darken, lighten, lerpColor } from "../shared/color-utils.js";
 import { mulberry32 } from "../shared/prng.js";
 import { classifyProjectedQuads } from "./edge-classify.js";
+import {
+  resolveDepth,
+  DEPTH_STANDARD,
+  DEPTH_DRAMATIC,
+  DEPTH_SUBTLE,
+} from "@genart-dev/illustration";
+import type { AtmosphericDepthConfig } from "@genart-dev/illustration";
 
 // ---------------------------------------------------------------------------
 // Camera resolution from layer properties (reads perspective:camera layer)
@@ -193,9 +200,19 @@ function classifyLighting(faceDot: number): FaceLighting {
   return "shadow";
 }
 
+/** Pick atmospheric depth preset by render mode. */
+function depthPresetForMode(mode: RenderMode): AtmosphericDepthConfig {
+  switch (mode) {
+    case "woodcut": return DEPTH_DRAMATIC;
+    case "technical": return DEPTH_SUBTLE;
+    default: return DEPTH_STANDARD;
+  }
+}
+
 /**
  * Compute a render style adjusted for distance from the camera.
- * Farther objects get thinner strokes, lower opacity, lower detail.
+ * Uses @genart-dev/illustration's resolveDepth() for coordinated
+ * atmospheric perspective (weight, opacity, density, detail).
  *
  * `faceDot` is the dot product of the face normal with the light direction
  * (range -1 to 1). Positive = lit, negative = shadow. Used for directional shading.
@@ -210,8 +227,9 @@ export function depthAdjustedStyle(
   faceDot: number = 0,
   renderMode: RenderMode = "filled",
 ): RenderStyle {
-  // Atmospheric fade: objects further away become lighter / less saturated
-  const atmosphereFade = Math.max(0, Math.min(1, depth * 0.8));
+  // Phase 5: Use illustration's resolveDepth() for coordinated atmospheric fade
+  const depthConfig = depthPresetForMode(renderMode);
+  const resolved = resolveDepth(depth, depthConfig);
 
   // Base fill color depends on element type
   let baseFill: string;
@@ -233,30 +251,29 @@ export function depthAdjustedStyle(
   }
 
   // Directional shading: darken shadow-facing sides, lighten lit sides
-  // Very strong contrast (±60%) — shadow faces must be clearly distinct from lit faces
   const shadingAmount = faceDot * 0.6;
   const shadedFill = shadingAmount < 0
     ? darken(baseFill, -shadingAmount)
     : lighten(baseFill, shadingAmount);
 
-  // Atmospheric blend toward background for distant objects
-  const finalFill = atmosphereFade > 0.1
-    ? lerpColor(shadedFill, "#d8d4d0", atmosphereFade * 0.4)
+  // Atmospheric blend — fade toward background based on resolved opacity
+  const atmosphereFade = 1 - resolved.opacity;
+  const finalFill = atmosphereFade > 0.05
+    ? lerpColor(shadedFill, "#d8d4d0", atmosphereFade * 0.6)
     : shadedFill;
 
-  // Stroke: atmospheric fade lightens the stroke for distant objects
-  const finalStroke = atmosphereFade > 0.3
-    ? lerpColor(palette.stroke, "#a0988c", atmosphereFade * 0.5)
+  const finalStroke = atmosphereFade > 0.1
+    ? lerpColor(palette.stroke, "#a0988c", atmosphereFade * 0.7)
     : palette.stroke;
 
   return {
     strokeColor: finalStroke,
     fillColor: finalFill,
-    // Edges must always read — 1.2 minimum, scale-responsive
-    strokeWeight: Math.max(1.2, (1 - atmosphereFade * 0.4) * Math.min(5, scale * 0.08)),
-    // Never go below 0.6 — buildings must read as solid, not ghostly
-    opacity: Math.max(0.6, 1 - atmosphereFade * 0.3),
-    detail: detail * (1 - atmosphereFade * 0.5),
+    // Weight from resolveDepth, with minimum floor
+    strokeWeight: Math.max(1.2, resolved.weight * Math.min(5, scale * 0.08)),
+    // Opacity from resolveDepth, with floor
+    opacity: Math.max(0.6, resolved.opacity),
+    detail: detail * resolved.detail,
     wireframe,
     renderMode,
     lighting: classifyLighting(faceDot),

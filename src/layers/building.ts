@@ -331,6 +331,54 @@ export const buildingLayerType: LayerTypeDefinition = {
       item.draw(ctx);
     }
 
+    // Phase 5: Cast shadow bands below projecting horizontal elements
+    // Beaux-Arts convention: 45° sun from upper-left creates thin shadow
+    // strips below cornices, string courses, and roof overhang.
+    {
+      const grammar = requireStyle(p.architecturalStyle);
+      const storyH = grammar.proportions.storyHeight;
+      const wallHeight = p.stories * storyH;
+      const wallBaseY = grammar.proportions.baseHeight;
+      const wallDepth = building.width * grammar.proportions.wallThickness;
+      const shadowH = wallDepth * 0.7; // shadow height = projection depth × 0.7
+      const frontZ = bz + building.depth / 2 + wallDepth / 2 + 0.02;
+
+      // Collect Y positions of projecting elements
+      const shadowYs: number[] = [];
+      // Cornice at top of wall
+      if (grammar.decorativeElements.length > 0) {
+        shadowYs.push(wallBaseY + wallHeight);
+      }
+      // String courses between floors
+      if (p.stories > 1 && grammar.decorativeElements.includes("string-course")) {
+        for (let s = 1; s < p.stories; s++) {
+          shadowYs.push(wallBaseY + s * storyH);
+        }
+      }
+
+      for (const shadowTop of shadowYs) {
+        const shadowBottom = Math.max(0, shadowTop - shadowH);
+        const corners: Vec3[] = [
+          { x: bx - building.width / 2, y: shadowBottom, z: frontZ },
+          { x: bx + building.width / 2, y: shadowBottom, z: frontZ },
+          { x: bx + building.width / 2, y: shadowTop, z: frontZ },
+          { x: bx - building.width / 2, y: shadowTop, z: frontZ },
+        ];
+        const proj = corners.map((c) => projectWithMatrix(c, vpMatrix, camera, viewport));
+        if (proj.some((pp) => pp.visible)) {
+          ctx.globalAlpha = 0.15;
+          ctx.fillStyle = "#1a1a20";
+          ctx.beginPath();
+          ctx.moveTo(proj[0]!.x, proj[0]!.y);
+          for (let si = 1; si < proj.length; si++) {
+            ctx.lineTo(proj[si]!.x, proj[si]!.y);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+
     // Ground contact line — heaviest line weight (ground edge class)
     const baseCorners: Vec3[] = [
       { x: bx - building.width / 2, y: 0, z: bz + building.depth / 2 },
